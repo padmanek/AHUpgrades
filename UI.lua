@@ -212,10 +212,23 @@ local function RefreshView(v)
     local scanning = A.GearScanState() ~= "idle"
     v.scanButton:SetText(scanning and "Stop scan" or "Scan gear")
     v.scanButton:SetEnabled(scanning or (A.CanGearScan()))
+    v.liveFrame:SetShown(v == A.ahView and A.LiveActive and A.LiveActive() or false)
 end
 
 function A.Refresh()
     for _, v in ipairs(views) do RefreshView(v) end
+end
+
+-- The rows on screen in the AH's Upgrades tab, for the live re-check (GearScan.lua); none when it isn't shown
+function A.LiveTargets()
+    local v = A.ahView
+    if not (v and v.frame:IsVisible()) then return {} end
+    local list = {}
+    for i = 1, ROWS do
+        local r = v.list[v.offset + i]
+        if r then list[#list + 1] = r end
+    end
+    return list
 end
 
 A.On("RESULTS", A.Refresh)
@@ -266,7 +279,7 @@ local function BuildList(host, top)
     content:SetPoint("TOP", host, "TOP", 0, top or 0)
     v.frame = host
 
-    v.status = Label(content, "GameFontHighlightSmall", 520)
+    v.status = Label(content, "GameFontHighlightSmall", 470)
     v.status:SetPoint("TOPLEFT", 12, 0)
 
     -- Scan gear: our own AH search for weapons and armor you can use (GearScan.lua); again to stop it
@@ -291,6 +304,25 @@ local function BuildList(host, top)
     end)
     scan:SetScript("OnLeave", GameTooltip_Hide)
     v.scanButton = scan
+
+    -- "Live" next to it while the rows on screen are being looked up again
+    local liveFrame = CreateFrame("Frame", nil, content)
+    liveFrame:SetSize(40, 20)
+    liveFrame:SetPoint("RIGHT", scan, "LEFT", -6, 0)
+    liveFrame:EnableMouse(true)
+    local liveText = Label(liveFrame, "GameFontNormalSmall", nil, "RIGHT")
+    liveText:SetPoint("RIGHT", 0, 0)
+    liveText:SetText("|cff40ff40Live|r")
+    liveFrame:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Live prices")
+        GameTooltip:AddLine("The rows on screen are looked up on the AH again, one every couple of seconds: a new "
+            .. "cheapest price is put in, and an item that is gone is taken off the list.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    liveFrame:SetScript("OnLeave", GameTooltip_Hide)
+    liveFrame:Hide()
+    v.liveFrame = liveFrame
 
     local sortButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     sortButton:SetSize(150, 22)
@@ -453,6 +485,9 @@ local function BuildList(host, top)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetHyperlink(self.data.link)
             GameTooltip:AddLine(("%d listed, cheapest %s"):format(self.data.n, coins(self.data.price)), 0.6, 0.6, 0.6)
+            if self.data.checked then
+                GameTooltip:AddLine(("Checked on the AH %d s ago."):format(math.floor(GetTime() - self.data.checked)), 0.6, 0.6, 0.6)
+            end
             if self.data.random then
                 GameTooltip:AddLine("Judged without its random enchant: the ones on the AH have extra stats.", 0.6, 0.6, 0.6, true)
             end
@@ -571,7 +606,7 @@ local function CreatePanel(ah)
     sub:SetPoint("LEFT", title, "RIGHT", 8, -1)
     sub:SetText("by your PawnForever weights")
     panel:Hide()
-    BuildList(panel, -34)
+    A.ahView = BuildList(panel, -34)
 end
 
 A.On("AH_SHOW", function()

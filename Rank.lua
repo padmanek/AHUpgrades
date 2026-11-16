@@ -131,7 +131,10 @@ function A.Listings()
     local list = {}
     local own = A.RealmData()
     if own and own.items and next(own.items) then
-        for _, e in pairs(own.items) do list[#list + 1] = e end
+        for k, e in pairs(own.items) do
+            e.key = e.key or k -- the live re-check (GearScan.lua) finds its entry by this
+            list[#list + 1] = e
+        end
         A.source = { kind = own.kind == "gear" and "gear" or "scan", t = own.t, count = #list }
         return list
     end
@@ -147,7 +150,8 @@ function A.Listings()
         if id and listed and price and price > 0 then
             local _, _, _, equipLoc, _, classID = GetItemInfoInstant(id)
             if (classID == 2 or classID == 4) and not SKIP_LOC[equipLoc or ""] then
-                list[#list + 1] = { link = "item:" .. id, price = price, n = entry.n or entry.qty or 1, t = entry.t }
+                list[#list + 1] = { link = "item:" .. id, price = price, n = entry.n or entry.qty or 1, t = entry.t,
+                    key = tostring(id) }
             end
         end
     end
@@ -270,16 +274,17 @@ end
 function A.Rank()
     runToken = runToken + 1
     local token = runToken
-    wipe(results)
+    -- judged into a list of its own: the one shown stays until this one is ready (no flicker on every update)
+    local building = {}
     local pawn = Pawn()
     if not pawn then
-        status = "nopawn"
+        status, results = "nopawn", {}
         A.Fire("RESULTS")
         return
     end
     local queue = A.Listings()
     if not queue or #queue == 0 then
-        status = "nodata"
+        status, results = "nodata", {}
         A.Fire("RESULTS")
         return
     end
@@ -323,7 +328,8 @@ function A.Rank()
                     -- "of the ..." stats: the real one on the AH is likely better, but which one is unknown
                     local random = not e.link:find("|H") and IsRandomEnchant(e.link)
                     if random then gainText = gainText .. " |cffaaaaaa+ random|r" end
-                    results[#results + 1] = {
+                    building[#building + 1] = {
+                        key = e.key, entry = e, -- the saved listing it comes from
                         link = (e.link:find("|H") and e.link) or itemLink or e.link, name = name or e.link,
                         price = e.price, n = e.n, slot = A.SLOT_NAMES[verdict.slot] or "", gain = gain,
                         slotOrder = SLOT_ORDER[verdict.slot] or 99,
@@ -344,16 +350,44 @@ function A.Rank()
             passes = passes + 1
             queue, retry, i = retry, {}, 1
             C_Timer.After(1, Step) -- give the client a moment to load them
+            results = building -- what is judged so far; the retries add to it
             A.SortResults()
             A.Fire("RESULTS")
             return
         end
         status = "done"
+        results = building
         A.SortResults()
         A.Fire("RESULTS")
     end
     A.Fire("RESULTS")
     C_Timer.After(0, Step)
+end
+
+------------------------------------------------------------------------
+-- Live re-check (GearScan.lua looks the shown rows up on the AH again)
+------------------------------------------------------------------------
+
+-- Its cheapest buyout now, and how many are listed: price and value change, and so does the saved listing
+function A.LiveUpdate(r, price, n)
+    r.price, r.n, r.checked = price, n or r.n, GetTime()
+    r.value = r.gain / math.max(price / 10000, 0.01)
+    if r.entry then r.entry.price, r.entry.n = price, n or r.entry.n end
+    A.SortResults()
+    A.Fire("RESULTS")
+end
+
+-- Not on the AH any more: off the list, and out of this realm's saved listings
+function A.LiveRemove(r)
+    for i = #results, 1, -1 do
+        if results[i] == r then table.remove(results, i) end
+    end
+    local own = A.RealmData()
+    if own and own.items and r.key and own.items[r.key] == r.entry then
+        own.items[r.key] = nil
+        own.count = math.max((own.count or 1) - 1, 0)
+    end
+    A.Fire("RESULTS")
 end
 
 -- New scan data, or something PawnForever cares about changed (gear, talents, weights, level): judge again when the
