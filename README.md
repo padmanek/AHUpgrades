@@ -15,6 +15,9 @@ It adds an **Upgrades** tab to the Auction House window, and `/ahu` opens the sa
   base item and marked "+ random".
 - **Judging.** Every listing goes through PawnForever exactly like its green bag arrows: your weights, your worn
   gear, the weaker ring/trinket, weapons as a pair, and only what you can use now.
+- **Your bags count too.** A listing must also beat the gear you carry, such as a second set for your other spec.
+  Each slot is compared with the best item you own, worn or in the bags; rings and trinkets with the weaker of your
+  best two. Those rows say "over bags", and the status line counts the listings skipped as already owned.
 
 ## Using the list
 

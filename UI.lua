@@ -127,7 +127,8 @@ local function StatusText()
     if status == "working" then
         return ("Checking %d of %d gear items%s (%s%s)..."):format(done, total, ForSpec(), from, when)
     end
-    return ("%d upgrades%s among %d gear items (%s%s)"):format(#A.Results(), ForSpec(), src.count or 0, from, when)
+    local bags = (A.inBags or 0) > 0 and ("; %d skipped, as good in bags"):format(A.inBags) or ""
+    return ("%d upgrades%s among %d gear items (%s%s)%s"):format(#A.Results(), ForSpec(), src.count or 0, from, when, bags)
 end
 
 local function RefreshView(v)
@@ -409,6 +410,9 @@ local function BuildList(host, top)
             GameTooltip:AddLine(("%d listed, cheapest %s"):format(self.data.n, coins(self.data.price)), 0.6, 0.6, 0.6)
             if self.data.random then
                 GameTooltip:AddLine("Judged without its random enchant: the ones on the AH have extra stats.", 0.6, 0.6, 0.6, true)
+            end
+            if self.data.vsBag then
+                GameTooltip:AddLine("Upgrade over " .. self.data.vsBag .. ", which you already have with the gear in your bags.", 0.6, 0.6, 0.6, true)
             end
             GameTooltip:Show()
         end)
