@@ -15,14 +15,17 @@ It adds an **Upgrades** tab to the Auction House window, and `/ahu` opens the sa
   base item and marked "+ random".
 - **Judging.** Every listing goes through PawnForever exactly like its green bag arrows: your weights, your worn
   gear, the weaker ring/trinket, weapons as a pair, and only what you can use now.
-- **Your bags count too.** A listing must also beat the gear you carry, such as a second set for your other spec.
-  Each slot is compared with the best item you own, worn or in the bags; rings and trinkets with the weaker of your
-  best two. Those rows say "over bags", and the status line counts the listings skipped as already owned.
+- **Your bags and bank count too.** A listing must also beat the gear you own, such as a second set for your other
+  spec. Each slot is compared with the best item you have, worn, in the bags or in the bank; rings and trinkets with
+  the weaker of your best two. Those rows say "over bags" or "over bank", and the status line counts the listings
+  skipped as already owned. The bank can only be read while it is open, so each visit records its gear; until the
+  first visit, Bagnon's cache of it is used if there is one.
 
 ## Using the list
 
-- **Spec buttons** (top right) switch between the two specs PawnForever tracks: your main scale, picked every time
-  the list opens, and the second scale if you set one. Each is named in its bag-arrow colour.
+- **Spec buttons** (top right) switch between the two specs PawnForever tracks: your main scale and the second scale
+  if you set one, each named in its bag-arrow colour. Every visit to the AH starts on main; the spec you pick stays
+  while you flip between Upgrades and Buy / Sell / Auctions.
 - **Slot buttons** above the list show how many upgrades each slot has; click one to see only that slot.
 - **Click a column header** to sort by it, click again to reverse. The Sort button cycles the common sorts.
 - **Max gold** hides anything more expensive.
@@ -41,7 +44,7 @@ Needs **PawnForever**. ForeverCraftAssistant is optional but is what makes the f
 | Command | What it does |
 |---|---|
 | `/ahu` | Toggles the list (the Upgrades tab at the AH, a window elsewhere) |
-| `/ahu status` | How many gear listings this realm's last scan saved, and when |
+| `/ahu status` | How many gear listings this realm's last scan saved, and the bank gear on record |
 | `/ahu debug` | Tab state and the last error |
 
 ## License

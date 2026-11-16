@@ -168,7 +168,8 @@ end
 -- What is in the bags
 --
 -- PawnForever compares a listing with what is worn. With a second set in the bags (the other spec's gear) that
--- makes it ask you to buy what you already carry. So every worn and bag item is scored with the same scale, and a
+-- makes it ask you to buy what you already carry. So every worn, bag and bank item (the bank as at the last visit,
+-- Bank.lua) is scored with the same scale, and a
 -- listing must also beat the best of those that could go in its place: the best one for a slot, the second best
 -- for rings and trinkets (you wear two).
 ------------------------------------------------------------------------
@@ -188,13 +189,14 @@ local function PlaceOf(slot, link)
 end
 local WEAR_TWO = { [11] = true, [12] = true } -- the ring and trinket groups
 
--- For each place: the scores of what is worn and of everything owned (worn + bags), best first
+-- For each place: the scores of what is worn and of everything owned (worn + bags + bank), best first
 local function ReadOwned(pawn, scale)
     local owned = {}
-    local function Add(link, slot, fromBag)
+    -- where: nil for worn, "bags" or "bank"
+    local function Add(link, slot, where)
         local ok, verdict = pcall(pawn.Upgrades.Check, pawn.Upgrades, link, scale)
         if not (ok and verdict and verdict.score) then return end
-        if fromBag and not verdict.usable then return end
+        if where and not verdict.usable then return end
         local place = PlaceOf(slot or verdict.slot, link)
         if not place then return end
         local o = owned[place]
@@ -202,25 +204,30 @@ local function ReadOwned(pawn, scale)
             o = { worn = {}, all = {} }
             owned[place] = o
         end
-        local entry = { score = verdict.score, link = link, bag = fromBag }
-        if not fromBag then table.insert(o.worn, entry) end
+        local entry = { score = verdict.score, link = link, where = where }
+        if not where then table.insert(o.worn, entry) end
         table.insert(o.all, entry)
     end
     for slot = 1, 18 do
         local link = A.Plain(GetInventoryItemLink("player", slot))
-        if link then Add(link, slot, false) end
+        if link then Add(link, slot, nil) end
     end
     local seen = {}
+    local function AddCarried(link, where)
+        if not link or seen[link] then return end
+        seen[link] = true
+        local _, _, _, loc, _, classID = GetItemInfoInstant(link)
+        if (classID == 2 or classID == 4) and not SKIP_LOC[loc or ""] then Add(link, nil, where) end
+    end
     for bag = 0, NUM_BAG_SLOTS or 4 do
         for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
             local item = C_Container.GetContainerItemInfo(bag, slot)
-            local link = item and A.Plain(item.hyperlink)
-            if link and not seen[link] then
-                seen[link] = true
-                local _, _, _, loc, _, classID = GetItemInfoInstant(link)
-                if (classID == 2 or classID == 4) and not SKIP_LOC[loc or ""] then Add(link, nil, true) end
-            end
+            AddCarried(item and A.Plain(item.hyperlink), "bags")
         end
+    end
+    -- the bank as it was at the last visit (Bank.lua)
+    if A.BankLinks then
+        for _, link in ipairs((A.BankLinks())) do AddCarried(link, "bank") end
     end
     local byScore = function(a, b) return a.score > b.score end
     for place, o in pairs(owned) do
@@ -228,13 +235,22 @@ local function ReadOwned(pawn, scale)
         table.sort(o.all, byScore)
         local n = WEAR_TWO[place] and 2 or 1
         o.base = o.all[n] -- what a listing has to beat: nil when a slot is still free
-        -- the bags only matter when they raise the bar above what is worn (a better item, or one for a free slot)
+        -- bags and bank only matter when they raise the bar above what is worn (a better item, or one for a free slot)
         o.fromBags = o.base and o.base.score > ((o.worn[n] and o.worn[n].score) or 0) or false
+        -- the item that raised it, and where it is
+        for i = 1, n do
+            local e = o.all[i]
+            if e and e.where then
+                o.carried = e
+                break
+            end
+        end
     end
     return owned
 end
 
--- nil: the bags already hold something as good. Otherwise the gain over the best bag item (or nothing to change).
+-- nil: bags or bank already hold something as good. false: nothing to change. Otherwise the gain over what you own,
+-- the item that sets the bar, and where it is ("bags" or "bank").
 local function AgainstBags(owned, verdict, link)
     local o = owned[PlaceOf(verdict.slot, link)]
     if not (o and o.fromBags) or verdict.partner then return false end
@@ -243,7 +259,8 @@ local function AgainstBags(owned, verdict, link)
     if base <= 0 then return false end
     local gain = points / base * 100
     if points < MIN_POINTS or gain < MIN_GAIN then return nil end
-    return gain, o.base.link
+    local carried = o.carried or o.base
+    return gain, carried.link, carried.where or "bags"
 end
 
 -- Re-judges every listing. Runs a few milliseconds per frame; items the client hasn't loaded yet are retried in
@@ -283,9 +300,9 @@ function A.Rank()
                 retry[#retry + 1] = e -- still loading
             else
                 progress = progress + 1
-                local bagGain, bagLink
+                local bagGain, bagLink, bagWhere
                 if ok and verdict and verdict.upgrade and verdict.usable then
-                    bagGain, bagLink = AgainstBags(owned, verdict, e.link)
+                    bagGain, bagLink, bagWhere = AgainstBags(owned, verdict, e.link)
                     if bagGain == nil then A.inBags = A.inBags + 1 end
                 end
                 if bagGain ~= nil and ok and verdict and verdict.upgrade and verdict.usable then
@@ -294,9 +311,9 @@ function A.Rank()
                     local gold = math.max(e.price / 10000, 0.01)
                     local gainText = pawn.Upgrades.GainText(verdict)
                     if bagGain then
-                        -- measured against the better item in the bags, not the worn one
+                        -- measured against the better item in the bags or bank, not the worn one
                         gain = bagGain
-                        gainText = ("+%d%% |cffaaaaaaover bags|r"):format(math.max(1, math.floor(bagGain + 0.5)))
+                        gainText = ("+%d%% |cffaaaaaaover %s|r"):format(math.max(1, math.floor(bagGain + 0.5)), bagWhere)
                     end
                     -- From item IDs only (ForeverCraftAssistant data), a random-enchant item is judged without its
                     -- "of the ..." stats: the real one on the AH is likely better, but which one is unknown
@@ -307,7 +324,7 @@ function A.Rank()
                         price = e.price, n = e.n, slot = A.SLOT_NAMES[verdict.slot] or "", gain = gain,
                         slotOrder = SLOT_ORDER[verdict.slot] or 99,
                         gainText = gainText, value = gain / gold, icon = icon, quality = quality, random = random,
-                        vsBag = bagGain and bagLink or nil,
+                        vsBag = bagGain and bagLink or nil, vsWhere = bagGain and bagWhere or nil,
                     }
                 end
             end
@@ -351,6 +368,7 @@ A.On("DATA", RankSoon)
 local bagEvents = CreateFrame("Frame")
 bagEvents:RegisterEvent("BAG_UPDATE_DELAYED")
 bagEvents:SetScript("OnEvent", RankSoon)
+A.On("BANK", RankSoon) -- a bank visit recorded what is there
 A.On("LOGIN", function()
     local p = _G.PawnForever
     if p and p.On then pcall(p.On, p, "REFRESH", RankSoon) end

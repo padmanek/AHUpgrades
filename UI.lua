@@ -127,7 +127,7 @@ local function StatusText()
     if status == "working" then
         return ("Checking %d of %d gear items%s (%s%s)..."):format(done, total, ForSpec(), from, when)
     end
-    local bags = (A.inBags or 0) > 0 and ("; %d skipped, as good in bags"):format(A.inBags) or ""
+    local bags = (A.inBags or 0) > 0 and ("; %d skipped, already owned"):format(A.inBags) or ""
     return ("%d upgrades%s among %d gear items (%s%s)%s"):format(#A.Results(), ForSpec(), src.count or 0, from, when, bags)
 end
 
@@ -206,12 +206,16 @@ end
 A.On("RESULTS", A.Refresh)
 A.On("DATA", A.Refresh)
 
-local function OnListShown()
-    -- every opening starts on the main spec
+-- Each visit to the AH (and each /ahu window) starts on the main spec; flipping between the Upgrades tab and
+-- Buy / Sell / Auctions during a visit keeps the spec picked
+local function StartOnMain()
     if A.specView ~= "main" then
         A.specView = "main"
         A.dirty = true
     end
+end
+
+local function OnListShown()
     if A.dirty or A.RankStatus() == "idle" then
         A.dirty = false
         A.Rank()
@@ -412,7 +416,8 @@ local function BuildList(host, top)
                 GameTooltip:AddLine("Judged without its random enchant: the ones on the AH have extra stats.", 0.6, 0.6, 0.6, true)
             end
             if self.data.vsBag then
-                GameTooltip:AddLine("Upgrade over " .. self.data.vsBag .. ", which you already have with the gear in your bags.", 0.6, 0.6, 0.6, true)
+                local where = self.data.vsWhere == "bank" and "in your bank (as at your last visit)" or "in your bags"
+                GameTooltip:AddLine("Upgrade over " .. self.data.vsBag .. ", which you already have " .. where .. ".", 0.6, 0.6, 0.6, true)
             end
             GameTooltip:Show()
         end)
@@ -529,6 +534,7 @@ local function CreatePanel(ah)
 end
 
 A.On("AH_SHOW", function()
+    StartOnMain()
     local ah = _G.AuctionHouseFrame
     if not ah then return end
     if not tab then
@@ -607,6 +613,14 @@ SlashCmdList.AHUPGRADES = function(msg)
     if msg == "status" then
         local data = A.RealmData()
         A.Print("%s: %s", A.RealmKey(), data and ("%d gear listings, scanned %s"):format(data.count or 0, ago(data.t)) or "no scan yet")
+        local links, t, from = A.BankLinks()
+        if from == "ahu" then
+            A.Print("bank: %d gear items, recorded %s", #links, ago(t))
+        elseif from == "bagnon" then
+            A.Print("bank: %d gear items from Bagnon's cache (visit the bank to record it here)", #links)
+        else
+            A.Print("bank: not seen yet, visit it once so its gear counts")
+        end
         return
     end
     local ah = _G.AuctionHouseFrame
@@ -620,5 +634,6 @@ SlashCmdList.AHUPGRADES = function(msg)
         return
     end
     if not window then BuildWindow() end
+    if not window:IsShown() then StartOnMain() end
     window:SetShown(not window:IsShown())
 end

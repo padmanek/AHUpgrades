@@ -1,13 +1,14 @@
 ## Interface: 16001
 ## Title: AH Upgrades
 ## Notes: Lists gear on the Auction House that is an upgrade by your PawnForever weights, best value for the gold first. Reads the full AH scan ForeverCraftAssistant makes, random enchants ("of the Bear") included.
-## Version: 1.2.0
+## Version: 1.3.0
 ## Author: padmanek
 ## X-License: MIT
 ## X-Website: https://github.com/padmanek/AHUpgrades
 ## SavedVariables: AHUpgradesDB
-## OptionalDeps: PawnForever, ForeverCraftAssistant
+## OptionalDeps: PawnForever, ForeverCraftAssistant, BagBrother
 
 Capture.lua
+Bank.lua
 Rank.lua
 UI.lua
