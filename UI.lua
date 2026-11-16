@@ -112,13 +112,23 @@ end
 local function StatusText()
     local status, done, total = A.RankStatus()
     if A.CaptureState() ~= "idle" then return "|cffffd100Reading the AH scan...|r" end
+    local scan, a, b = A.GearScanState()
+    if scan == "browse" then
+        return ("|cffffd100Scanning the AH for gear you can use...|r (%d page%s)"):format(a, a == 1 and "" or "s")
+    elseif scan == "loading" then
+        return "|cffffd100Scanning the AH: loading item data...|r"
+    elseif scan == "details" then
+        return ("|cffffd100Scanning the AH: random enchants, %d of %d...|r"):format(math.min(a, b), b)
+    end
     if status == "nopawn" then return "|cffff6060PawnForever is not loaded: it supplies the stat weights.|r" end
     if status == "nodata" then
-        return "|cffff6060No AH data yet.|r Press Scan in ForeverCraftAssistant at the AH."
+        return "|cffff6060No AH data yet.|r Press Scan gear (or ForeverCraftAssistant's Scan) at the AH."
     end
     local src = A.source or {}
     local from
-    if src.kind == "scan" then
+    if src.kind == "gear" then
+        from = "this realm's gear scan"
+    elseif src.kind == "scan" then
         from = "this realm's scan"
     else
         from = "ForeverCraftAssistant prices" .. (src.realm and (" from |cffffd100" .. src.realm .. "|r") or "")
@@ -197,6 +207,9 @@ local function RefreshView(v)
             b.selected:SetShown(on and second ~= nil)
         end
     end
+    local scanning = A.GearScanState() ~= "idle"
+    v.scanButton:SetText(scanning and "Stop scan" or "Scan gear")
+    v.scanButton:SetEnabled(scanning or (A.CanGearScan()))
 end
 
 function A.Refresh()
@@ -205,6 +218,7 @@ end
 
 A.On("RESULTS", A.Refresh)
 A.On("DATA", A.Refresh)
+A.On("SCAN", A.Refresh)
 
 -- Each visit to the AH (and each /ahu window) starts on the main spec; flipping between the Upgrades tab and
 -- Buy / Sell / Auctions during a visit keeps the spec picked
@@ -250,8 +264,31 @@ local function BuildList(host, top)
     content:SetPoint("TOP", host, "TOP", 0, top or 0)
     v.frame = host
 
-    v.status = Label(content, "GameFontHighlightSmall", 620)
+    v.status = Label(content, "GameFontHighlightSmall", 520)
     v.status:SetPoint("TOPLEFT", 12, 0)
+
+    -- Scan gear: our own AH search for weapons and armor you can use (GearScan.lua); again to stop it
+    local scan = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    scan:SetSize(96, 20)
+    scan:SetPoint("TOPRIGHT", content, "TOPRIGHT", -10, 3)
+    scan:SetScript("OnClick", function() A.GearScan() end)
+    scan:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Scan gear")
+        GameTooltip:AddLine("Searches the AH for weapons and armor you can use, up to your level: much quicker than a "
+            .. "full scan, and it can run any time.", 1, 1, 1, true)
+        GameTooltip:AddLine("Items with a random enchant (\"of the Bear\") are looked up one by one, so their real "
+            .. "stats count.", 0.7, 0.7, 0.7, true)
+        local ok, why = A.CanGearScan()
+        if A.GearScanState() ~= "idle" then
+            GameTooltip:AddLine("Click to stop.", 1, 0.82, 0)
+        elseif not ok then
+            GameTooltip:AddLine("Can't scan now: " .. why .. ".", 1, 0.4, 0.4, true)
+        end
+        GameTooltip:Show()
+    end)
+    scan:SetScript("OnLeave", GameTooltip_Hide)
+    v.scanButton = scan
 
     local sortButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     sortButton:SetSize(150, 22)

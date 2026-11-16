@@ -131,7 +131,7 @@ function A.Listings()
     local own = A.RealmData()
     if own and own.items and next(own.items) then
         for _, e in pairs(own.items) do list[#list + 1] = e end
-        A.source = { kind = "scan", t = own.t, count = #list }
+        A.source = { kind = own.kind == "gear" and "gear" or "scan", t = own.t, count = #list }
         return list
     end
     local prices, otherRealm, scannedAt = FCARealmPrices()
@@ -163,6 +163,7 @@ local function IsRandomEnchant(link)
     end
     return false
 end
+A.IsRandomEnchant = IsRandomEnchant -- also used by the gear scan (GearScan.lua)
 
 ------------------------------------------------------------------------
 -- What is in the bags

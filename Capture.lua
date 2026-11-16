@@ -58,6 +58,7 @@ local function GroupKey(link)
     if not suffix or suffix == "" or suffix == "0" then return id end
     return id .. ":" .. suffix
 end
+A.GroupKey, A.IsGear = GroupKey, IsGear -- also used by the gear scan (GearScan.lua)
 
 ------------------------------------------------------------------------
 -- Reading the replicate list
