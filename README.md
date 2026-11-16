@@ -18,6 +18,8 @@ It adds an **Upgrades** tab to the Auction House window, and `/ahu` opens the sa
 
 ## Using the list
 
+- **Spec buttons** (top right) switch between the two specs PawnForever tracks: your main scale, picked every time
+  the list opens, and the second scale if you set one. Each is named in its bag-arrow colour.
 - **Slot buttons** above the list show how many upgrades each slot has; click one to see only that slot.
 - **Click a column header** to sort by it, click again to reverse. The Sort button cycles the common sorts.
 - **Max gold** hides anything more expensive.

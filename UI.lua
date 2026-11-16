@@ -92,6 +92,23 @@ local function SetSlotFilter(group)
     A.Refresh()
 end
 
+-- Main or second spec: the list is judged again with that spec's PawnForever scale
+local function SetSpecView(view)
+    if A.specView == view then return end
+    A.specView = view
+    for _, other in ipairs(views) do other.offset = 0 end
+    A.dirty = false
+    A.Rank()
+end
+
+-- The spec named in texts: "for Feral" (only once there is a second spec to tell it from)
+local function ForSpec()
+    local _, second = A.TrackedScales()
+    local scale = A.RankedScale()
+    if not (second and scale) then return "" end
+    return " for " .. A.ScaleLabel(scale)
+end
+
 local function StatusText()
     local status, done, total = A.RankStatus()
     if A.CaptureState() ~= "idle" then return "|cffffd100Reading the AH scan...|r" end
@@ -108,9 +125,9 @@ local function StatusText()
     end
     local when = src.t and (", " .. ago(src.t)) or ""
     if status == "working" then
-        return ("Checking %d of %d gear items (%s%s)..."):format(done, total, from, when)
+        return ("Checking %d of %d gear items%s (%s%s)..."):format(done, total, ForSpec(), from, when)
     end
-    return ("%d upgrades among %d gear items (%s%s)"):format(#A.Results(), src.count or 0, from, when)
+    return ("%d upgrades%s among %d gear items (%s%s)"):format(#A.Results(), ForSpec(), src.count or 0, from, when)
 end
 
 local function RefreshView(v)
@@ -163,8 +180,22 @@ local function RefreshView(v)
     if not v.maxBox:HasFocus() then v.maxBox:SetText(A.db.maxGold and tostring(A.db.maxGold) or "") end
     v.footer:SetText(#list > 0 and ("%d-%d of %d   (mouse wheel to scroll)"):format(v.offset + 1, math.min(v.offset + ROWS, #list), #list) or
         (A.RankStatus() == "done" and (A.db.slotFilter
-            and ("No %s upgrades in this scan (or under your max price). Click All to see every slot."):format((SLOT_LABEL[A.db.slotFilter] or ""):lower())
-            or "No upgrades in this scan (or under your max price).") or ""))
+            and ("No %s upgrades%s here (or under your max price). Click All for every slot."):format((SLOT_LABEL[A.db.slotFilter] or ""):lower(), ForSpec())
+            or ("No upgrades%s in this scan (or under your max price)."):format(ForSpec())) or ""))
+    -- Spec switch: main always, second only when PawnForever tracks one
+    local main, second = A.TrackedScales()
+    local _, view = A.ViewScale()
+    for _, b in ipairs(v.specButtons) do
+        local scale = b.view == "second" and second or main
+        b:SetShown(scale ~= nil)
+        if scale then
+            b:SetText(A.ScaleLabel(scale))
+            local on = view == b.view
+            if on then b:LockHighlight() else b:UnlockHighlight() end
+            b:SetAlpha(on and 1 or 0.6)
+            b.selected:SetShown(on and second ~= nil)
+        end
+    end
 end
 
 function A.Refresh()
@@ -175,6 +206,11 @@ A.On("RESULTS", A.Refresh)
 A.On("DATA", A.Refresh)
 
 local function OnListShown()
+    -- every opening starts on the main spec
+    if A.specView ~= "main" then
+        A.specView = "main"
+        A.dirty = true
+    end
     if A.dirty or A.RankStatus() == "idle" then
         A.dirty = false
         A.Rank()
@@ -241,9 +277,39 @@ local function BuildList(host, top)
     recheck:SetText("Recheck")
     recheck:SetScript("OnClick", function() A.Rank() end)
 
-    local hint = Label(content, "GameFontDisableSmall")
-    hint:SetPoint("LEFT", recheck, "RIGHT", 12, 0)
-    hint:SetText("Click: search AH   Shift-click: link")
+    -- Spec switch, right-aligned on this row: PawnForever's main scale and its second one, each in its colour
+    v.specButtons = {}
+    local SPEC_TIP = {
+        main = "Upgrades for your main PawnForever scale.",
+        second = "Upgrades for the second scale PawnForever tracks.",
+    }
+    for i, view in ipairs({ "second", "main" }) do -- built right to left
+        local b = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+        b:SetSize(108, 22)
+        if i == 1 then b:SetPoint("TOPRIGHT", content, "TOPRIGHT", -10, -18)
+        else b:SetPoint("RIGHT", v.specButtons[1], "LEFT", -4, 0) end
+        b.view = view
+        b.selected = b:CreateTexture(nil, "OVERLAY")
+        b.selected:SetTexture("Interface\\Buttons\\UI-Listbox-Highlight2")
+        b.selected:SetBlendMode("ADD")
+        b.selected:SetVertexColor(1, 0.82, 0, 0.35)
+        b.selected:SetPoint("TOPLEFT", 3, -3)
+        b.selected:SetPoint("BOTTOMRIGHT", -3, 3)
+        b.selected:Hide()
+        b:SetScript("OnClick", function(self) SetSpecView(self.view) end)
+        b:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(self:GetText() or "")
+            GameTooltip:AddLine(SPEC_TIP[self.view], 1, 1, 1, true)
+            local _, second = A.TrackedScales()
+            if not second then
+                GameTooltip:AddLine("Pick a second scale in PawnForever's options to switch between two specs here.", 0.7, 0.7, 0.7, true)
+            end
+            GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", GameTooltip_Hide)
+        v.specButtons[i] = b
+    end
 
     -- Slot buttons: show only one slot's upgrades; click it again (or All) for every slot
     v.counts, v.slotButtons = {}, {}
@@ -360,6 +426,9 @@ local function BuildList(host, top)
 
     v.footer = Label(content, "GameFontDisableSmall")
     v.footer:SetPoint("TOPLEFT", 12, -66 - SLOT_H - ROWS * ROW_H)
+    local hint = Label(content, "GameFontDisableSmall", nil, "RIGHT")
+    hint:SetPoint("TOPRIGHT", -12, -66 - SLOT_H - ROWS * ROW_H)
+    hint:SetText("Click: search AH   Shift-click: link")
 
     host:EnableMouseWheel(true)
     host:SetScript("OnMouseWheel", function(_, delta)

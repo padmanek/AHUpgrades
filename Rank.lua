@@ -1,7 +1,8 @@
 -- AH Upgrades: ranking.
--- Every saved gear listing is judged by PawnForever exactly as its green bag arrows are (PawnForever.Upgrades:Check:
--- your weights, your worn gear, the weaker ring/trinket, weapons as a pair, usable by you now). The upgrades are
--- then sorted by value: % upgrade per gold.
+-- Every saved gear listing is judged by PawnForever exactly as its bag arrows are (PawnForever.Upgrades:Check:
+-- your weights, your worn gear, the weaker ring/trinket, weapons as a pair, usable by you now), for the spec picked
+-- in the list (PawnForever's main scale, or its second one). The upgrades are then sorted by value: % upgrade per
+-- gold.
 local _, A = ...
 
 local results = {}     -- { link, name, price, n, slot, gainText, gain, value, icon, quality }
@@ -26,6 +27,42 @@ end
 
 function A.Results() return results end
 function A.RankStatus() return status, progress, totalToCheck end
+
+------------------------------------------------------------------------
+-- Which spec: PawnForever tracks a main scale and, optionally, a second one (its bag arrows show both). The list
+-- shows the upgrades for one of them at a time: "main" or "second". Not saved: every opening starts on main.
+------------------------------------------------------------------------
+
+A.specView = "main"
+
+-- The main scale and the second one (nil when PawnForever tracks only one)
+function A.TrackedScales()
+    local p = Pawn()
+    if not (p and p.Scales and p.Scales.Main) then return nil, nil end
+    local okMain, main = pcall(p.Scales.Main, p.Scales)
+    local okSecond, second = false, nil
+    if p.Scales.Second then okSecond, second = pcall(p.Scales.Second, p.Scales) end
+    return okMain and main or nil, okSecond and second or nil
+end
+
+-- The scale the list is for now; falls back to main when there is no second scale
+function A.ViewScale()
+    local main, second = A.TrackedScales()
+    if A.specView == "second" and second then return second, "second" end
+    return main, "main"
+end
+
+-- A scale's name in its PawnForever colour (the colour of its bag arrows)
+function A.ScaleLabel(scale)
+    if not scale then return "?" end
+    local p = Pawn()
+    local ok, color = false, nil
+    if p and p.Scales and p.Scales.ColorOf then ok, color = pcall(p.Scales.ColorOf, p.Scales, scale) end
+    return ((ok and color and color.hex) or "|cffffffff") .. (scale.name or "?") .. "|r"
+end
+
+-- The scale the current results were judged with
+function A.RankedScale() return A.rankedScale end
 
 -- Each sort: the column's key and its natural direction (true = highest first). A.db.sortReverse flips the
 -- direction. Ties are always broken by best value, then cheapest.
@@ -146,6 +183,8 @@ function A.Rank()
         return
     end
     totalToCheck, progress, status = #queue, 0, "working"
+    local scale = A.ViewScale()
+    A.rankedScale = scale
     local passes, retry = 0, {}
     local i = 1
 
@@ -155,7 +194,7 @@ function A.Rank()
         while i <= #queue do
             local e = queue[i]
             i = i + 1
-            local ok, verdict = pcall(pawn.Upgrades.Check, pawn.Upgrades, e.link)
+            local ok, verdict = pcall(pawn.Upgrades.Check, pawn.Upgrades, e.link, scale)
             if ok and verdict == nil then
                 retry[#retry + 1] = e -- still loading
             else
