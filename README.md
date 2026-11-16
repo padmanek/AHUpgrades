@@ -37,7 +37,8 @@ It adds an **Upgrades** tab to the Auction House window, and `/ahu` opens the sa
   have ("-" when what you wear there is worth nothing by your weights), the price, and the value (% upgrade per gold).
 - **Click a column header** to sort by it, click again to reverse. The Sort button cycles the common sorts.
 - **Max gold** hides anything more expensive.
-- **Click a row** to search the AH for it, **Shift-click** to link it in chat.
+- **Click a row** to search the AH for it (the Buy tab's filters and category are cleared first, so every listing of
+  it shows), **Shift-click** to link it in chat.
 
 ## Install
 

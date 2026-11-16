@@ -247,7 +247,8 @@ local function OnScanBrowse()
     LoadThenSort()
 end
 
--- Every quality, as the Buy tab asks by default (and, for the gear scan, only what you can use)
+-- Every quality, as the Buy tab asks by default (and, for the gear scan, only what you can use). Also used by a
+-- click on a row (UI.lua), when the Buy tab's own filters can't be cleared.
 local function Filters(usableOnly)
     local F = Enum.AuctionHouseFilter or {}
     local list = {}
@@ -258,6 +259,7 @@ local function Filters(usableOnly)
     end
     return list
 end
+A.BrowseFilters = Filters
 
 function A.GearScan()
     if state ~= "idle" then

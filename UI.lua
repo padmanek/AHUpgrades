@@ -51,8 +51,32 @@ local function SearchAH(link)
     end
     local ok = pcall(function()
         if ah.SetDisplayMode and _G.AuctionHouseFrameDisplayMode then ah:SetDisplayMode(AuctionHouseFrameDisplayMode.Buy) end
-        ah.SearchBar:SetSearchText(name)
-        ah.SearchBar:StartSearch()
+        -- Filters set by hand in the Buy tab (quality, level range, usable only) or a category picked on the left
+        -- would hide the item: clear them, so the search finds every listing of it
+        local bar = ah.SearchBar
+        local cleared = false
+        local fb = bar.FilterButton
+        if fb then
+            if type(fb.Reset) == "function" then
+                cleared = pcall(fb.Reset, fb)
+            elseif fb.ClearFiltersButton and fb.ClearFiltersButton.Click then
+                cleared = pcall(fb.ClearFiltersButton.Click, fb.ClearFiltersButton)
+            end
+        end
+        local list = ah.CategoriesList
+        if list and type(list.SetSelectedCategory) == "function" then pcall(list.SetSelectedCategory, list, nil) end
+        bar:SetSearchText(name)
+        if cleared then
+            bar:StartSearch()
+        else
+            -- no way to clear the Buy tab's filters here: search without them ourselves; the Buy tab shows the answer
+            local F = A.BrowseFilters and A.BrowseFilters(false) or {}
+            local sort = { { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false } }
+            if not pcall(C_AuctionHouse.SendBrowseQuery, { searchString = name, sorts = sort, filters = F,
+                itemClassFilters = {}, minLevel = 0, maxLevel = 0 }) then
+                bar:StartSearch()
+            end
+        end
     end)
     if not ok then A.Print("search the AH for: %s", name) end
 end
