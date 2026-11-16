@@ -686,6 +686,11 @@ SlashCmdList.AHUPGRADES = function(msg)
         end
         return
     end
+    if msg == "live" then
+        A.db.liveLog = not A.db.liveLog
+        A.Print("live price log in chat %s.", A.db.liveLog and "|cff40ff40on|r (/ahu live again to stop)" or "off")
+        return
+    end
     if msg == "status" then
         local data = A.RealmData()
         A.Print("%s: %s", A.RealmKey(), data and ("%d gear listings, scanned %s"):format(data.count or 0, ago(data.t)) or "no scan yet")

@@ -53,6 +53,7 @@ Needs **PawnForever**. ForeverCraftAssistant is optional but is what makes the f
 |---|---|
 | `/ahu` | Toggles the list (the Upgrades tab at the AH, a window elsewhere) |
 | `/ahu status` | How many gear listings this realm's last scan saved, and the bank gear on record |
+| `/ahu live` | Says in chat what each live price check does (again to stop) |
 | `/ahu debug` | Tab state and the last error |
 
 ## License

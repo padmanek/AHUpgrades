@@ -318,6 +318,11 @@ end
 
 function A.LiveActive() return liveOn end
 
+-- /ahu live: says in chat what each look-up does
+local function LiveLog(msg, ...)
+    if A.db and A.db.liveLog then A.Print("|cff40ff40live|r: " .. msg, ...) end
+end
+
 -- .asked: our query has gone out; answers before that belong to someone else's search and are ignored
 local function LiveDone() live.row, live.phase, live.key, live.asked = nil, nil, nil, false end
 
@@ -330,15 +335,22 @@ local function Matches(r, link)
 end
 
 local function LiveApply(r, price, n)
-    if price then A.LiveUpdate(r, price, n) else A.LiveRemove(r) end
+    if price then
+        LiveLog("%s: %d listed, cheapest %s", r.link, n or 0, C_CurrencyInfo.GetCoinTextureString(math.floor(price + 0.5)))
+        A.LiveUpdate(r, price, n)
+    else
+        LiveLog("%s: gone from the AH, taken off the list", r.link)
+        A.LiveRemove(r)
+    end
     LiveDone()
 end
 
 local function OnLiveBrowse()
     local r = live.row
     local id = ItemIDOf(r)
+    local all = AH.GetBrowseResults() or {}
     local keys, best, total = {}, nil, 0
-    for _, b in ipairs(AH.GetBrowseResults() or {}) do
+    for _, b in ipairs(all) do
         local key = b.itemKey
         if key and Plain(key.itemID) == id then
             keys[#keys + 1] = key
@@ -348,7 +360,9 @@ local function OnLiveBrowse()
         end
     end
     if #keys == 0 then
-        if AH.HasFullBrowseResults and not AH.HasFullBrowseResults() then
+        -- other items by that name, and more pages to come: ours may be further on. An empty answer is final.
+        if #all > 0 and AH.HasFullBrowseResults and not AH.HasFullBrowseResults() then
+            live.sent = GetTime()
             WhenReady(function() pcall(AH.RequestMoreBrowseResults) end)
             return
         end
@@ -363,20 +377,26 @@ local function OnLiveBrowse()
     live.phase, live.key, live.sent, live.asked = "items", keys[1], GetTime(), false
     WhenReady(function()
         live.sent = GetTime()
-        live.asked = pcall(AH.SendSearchQuery, keys[1], PRICE_SORT, true)
-        if not live.asked then LiveDone() end
+        local ok, err = pcall(AH.SendSearchQuery, keys[1], PRICE_SORT, true)
+        live.asked = ok
+        if not ok then
+            LiveLog("|cffff6060the AH refused the item search:|r %s", tostring(err))
+            LiveDone()
+        end
     end, function() return live.row == r end)
 end
 
 local function OnLiveItem(key)
     if live.phase ~= "items" or not SameKey(key, live.key) then return end
-    if AH.HasFullItemSearchResults and not AH.HasFullItemSearchResults(key) then
+    local auctions = ItemAuctions(key)
+    if #auctions > 0 and AH.HasFullItemSearchResults and not AH.HasFullItemSearchResults(key) then
+        live.sent = GetTime()
         WhenReady(function() pcall(AH.RequestMoreItemSearchResults, key) end)
         return
     end
     local r = live.row
     local best, n = nil, 0
-    for _, a in ipairs(ItemAuctions(key)) do
+    for _, a in ipairs(auctions) do
         if Matches(r, a.link) then
             n = n + 1
             if not best or a.price < best then best = a.price end
@@ -396,7 +416,11 @@ local function LiveStep()
     end
     local now = GetTime()
     if live.row then
-        if now - live.sent > LIVE_TIMEOUT then LiveDone() end -- no answer: try another
+        if now - live.sent > LIVE_TIMEOUT then -- no answer: try another
+            LiveLog("%s: no answer from the AH (%s search%s)", live.row.link, live.phase or "?",
+                live.asked and "" or ", never sent: the AH was busy")
+            LiveDone()
+        end
         return
     end
     if now - live.last < LIVE_GAP then return end
@@ -409,12 +433,20 @@ local function LiveStep()
         if name and now - (r.checked or 0) >= LIVE_AGAIN then
             r.checked = now
             live.row, live.phase, live.sent, live.last = r, "browse", now, now
-            local query = { searchString = name, sorts = PRICE_SORT, filters = Filters(false), itemClassFilters = {} }
+            -- as the Buy tab searches: by name, every quality, no level limits (0 = none)
+            local query = { searchString = name, sorts = PRICE_SORT, filters = Filters(false), itemClassFilters = {},
+                minLevel = 0, maxLevel = 0 }
             live.asked = false
+            LiveLog("checking %s", r.link)
             WhenReady(function()
                 live.sent = GetTime()
-                live.asked = pcall(AH.SendBrowseQuery, query)
-                if not live.asked then LiveDone() end
+                local ok, err = pcall(AH.SendBrowseQuery, query)
+                live.asked = ok
+                if not ok then
+                    A.lastError = "live search: " .. tostring(err)
+                    LiveLog("|cffff6060the AH refused the search:|r %s", tostring(err))
+                    LiveDone()
+                end
             end, function() return live.row == r end)
             return
         end
