@@ -4,9 +4,10 @@ local _, A = ...
 
 local ROWS, ROW_H = 16, 22
 local SLOT_Y, SLOT_H = 46, 32 -- the row of slot buttons: where it starts, and how far it pushes the list down
-local SORT_LABEL = { value = "Best value", gain = "Biggest upgrade", price = "Cheapest", slot = "By slot", name = "By name" }
+local SORT_LABEL = { value = "Best value", gain = "Biggest upgrade", price = "Cheapest", slot = "By slot", name = "By name",
+    score = "By score" }
 -- The Sort button cycles these; slot and name sorting stay on the column headers
-local SORT_NEXT = { value = "gain", gain = "price", price = "value", slot = "value", name = "value" }
+local SORT_NEXT = { value = "gain", gain = "price", price = "value", slot = "value", name = "value", score = "value" }
 local views = {} -- every built list (the AH tab, the window)
 
 -- Picks a sort: a new column sorts its natural way, the current one again flips it
@@ -163,6 +164,7 @@ local function RefreshView(v)
             row.icon:SetTexture(r.icon or 134400)
             row.name:SetText(r.link)
             row.slot:SetText(r.slot)
+            row.score:SetText(r.scoreText or "")
             row.gain:SetText(r.gainText)
             row.price:SetText(coins(r.price))
             row.value:SetText(("%.0f%%/g"):format(r.value))
@@ -251,8 +253,8 @@ end
 
 -- columns: x offset, width, header, justify, sort key
 local COLS = {
-    { 30, 230, "Item", "LEFT", "name" }, { 266, 70, "Slot", "LEFT", "slot" }, { 340, 120, "Upgrade", "LEFT", "gain" },
-    { 464, 100, "Price", "LEFT", "price" }, { 568, 52, "Value", "RIGHT", "value" },
+    { 30, 196, "Item", "LEFT", "name" }, { 232, 64, "Slot", "LEFT", "slot" }, { 300, 44, "Score", "RIGHT", "score" },
+    { 356, 112, "Upgrade", "LEFT", "gain" }, { 472, 92, "Price", "LEFT", "price" }, { 568, 52, "Value", "RIGHT", "value" },
 }
 local LIST_W = 640
 
@@ -437,13 +439,15 @@ local function BuildList(host, top)
         row.name:SetPoint("LEFT", COLS[1][1] - 8, 0)
         row.slot = Label(row, "GameFontHighlightSmall", COLS[2][2])
         row.slot:SetPoint("LEFT", COLS[2][1] - 8, 0)
-        row.gain = Label(row, "GameFontHighlightSmall", COLS[3][2])
-        row.gain:SetPoint("LEFT", COLS[3][1] - 8, 0)
+        row.score = Label(row, "GameFontHighlightSmall", COLS[3][2], "RIGHT")
+        row.score:SetPoint("LEFT", COLS[3][1] - 8, 0)
+        row.gain = Label(row, "GameFontHighlightSmall", COLS[4][2])
+        row.gain:SetPoint("LEFT", COLS[4][1] - 8, 0)
         row.gain:SetTextColor(0.25, 1, 0.25)
-        row.price = Label(row, "GameFontHighlightSmall", COLS[4][2])
-        row.price:SetPoint("LEFT", COLS[4][1] - 8, 0)
-        row.value = Label(row, "GameFontHighlightSmall", COLS[5][2], "RIGHT")
-        row.value:SetPoint("LEFT", COLS[5][1] - 8, 0)
+        row.price = Label(row, "GameFontHighlightSmall", COLS[5][2])
+        row.price:SetPoint("LEFT", COLS[5][1] - 8, 0)
+        row.value = Label(row, "GameFontHighlightSmall", COLS[6][2], "RIGHT")
+        row.value:SetPoint("LEFT", COLS[6][1] - 8, 0)
         row:SetScript("OnEnter", function(self)
             if not self.data then return end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")

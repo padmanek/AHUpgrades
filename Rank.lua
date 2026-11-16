@@ -69,6 +69,7 @@ function A.RankedScale() return A.rankedScale end
 A.SORTS = {
     name = { function(r) return (r.name or ""):lower() end, false },
     slot = { function(r) return r.slotOrder or 99 end, false }, -- paper-doll order, Head to Ranged
+    score = { function(r) return r.score or 0 end, true }, -- PawnForever's score with the spec picked
     gain = { function(r) return r.gain end, true },
     price = { function(r) return r.price end, false },
     value = { function(r) return r.value end, true },
@@ -310,7 +311,9 @@ function A.Rank()
                     local name, itemLink, quality, _, _, _, _, _, _, icon = GetItemInfo(e.link)
                     local gain = verdict.gain or (verdict.empty and 100) or 50
                     local gold = math.max(e.price / 10000, 0.01)
-                    local gainText = pawn.Upgrades.GainText(verdict)
+                    -- no percentage to show when what is worn scores nothing (Pawn: "replaces an item worth nothing")
+                    local worthless = not verdict.gain and not verdict.empty and not verdict.points
+                    local gainText = worthless and "-" or pawn.Upgrades.GainText(verdict)
                     if bagGain then
                         -- measured against the better item in the bags or bank, not the worn one
                         gain = bagGain
@@ -326,6 +329,8 @@ function A.Rank()
                         slotOrder = SLOT_ORDER[verdict.slot] or 99,
                         gainText = gainText, value = gain / gold, icon = icon, quality = quality, random = random,
                         vsBag = bagGain and bagLink or nil, vsWhere = bagGain and bagWhere or nil,
+                        score = verdict.score,
+                        scoreText = verdict.score and ((pawn.Format and pawn.Format(verdict.score)) or ("%.1f"):format(verdict.score)),
                     }
                 end
             end

@@ -29,6 +29,8 @@ It adds an **Upgrades** tab to the Auction House window, and `/ahu` opens the sa
   if you set one, each named in its bag-arrow colour. Every visit to the AH starts on main; the spec you pick stays
   while you flip between Upgrades and Buy / Sell / Auctions.
 - **Slot buttons** above the list show how many upgrades each slot has; click one to see only that slot.
+- **Columns:** the item, its slot, its **Score** (PawnForever's, for the spec picked), the **Upgrade** over what you
+  have ("-" when what you wear there is worth nothing by your weights), the price, and the value (% upgrade per gold).
 - **Click a column header** to sort by it, click again to reverse. The Sort button cycles the common sorts.
 - **Max gold** hides anything more expensive.
 - **Click a row** to search the AH for it, **Shift-click** to link it in chat.
