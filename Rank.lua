@@ -1,6 +1,7 @@
 -- AH Upgrades: ranking.
 -- Every saved gear listing is judged by PawnForever exactly as its bag arrows are (PawnForever.Upgrades:Check:
--- your weights, your worn gear, the weaker ring/trinket, weapons as a pair, usable by you now), for the spec picked
+-- your weights, your worn gear - or the equipment set the scale is linked to - the weaker ring/trinket, weapons as a
+-- pair, usable by you now), for the spec picked
 -- in the list (PawnForever's main scale, or its second one). The upgrades are then sorted by value: % upgrade per
 -- gold.
 local _, A = ...
@@ -195,9 +196,24 @@ local function PlaceOf(slot, link)
 end
 local WEAR_TWO = { [11] = true, [12] = true } -- the ring and trinket groups
 
+-- What PawnForever measures a listing against in a slot: the piece in the scale's equipment set when the scale is
+-- linked to one (PawnForever's Sets.lua), otherwise what is worn
+local function WornLink(pawn, scale, slot)
+    local sets = pawn.Sets
+    if sets and sets.For and sets.SlotLink then
+        local ok, setID = pcall(sets.For, sets, scale)
+        if ok and setID then
+            local okLink, link = pcall(sets.SlotLink, sets, setID, slot)
+            if okLink and link ~= nil then return link or nil end -- false: the set keeps the slot empty
+        end
+    end
+    return A.Plain(GetInventoryItemLink("player", slot))
+end
+
 -- For each place: the scores of what is worn and of everything owned (worn + bags + bank), best first
 local function ReadOwned(pawn, scale)
     local owned = {}
+    local hands = 0 -- the score of the worn main-hand weapon, one-handed or two-handed
     -- where: nil for worn, "bags" or "bank"
     local function Add(link, slot, where)
         local ok, verdict = pcall(pawn.Upgrades.Check, pawn.Upgrades, link, scale)
@@ -211,14 +227,20 @@ local function ReadOwned(pawn, scale)
             owned[place] = o
         end
         local entry = { score = verdict.score, link = link, where = where }
-        if not where then table.insert(o.worn, entry) end
+        if not where then
+            table.insert(o.worn, entry)
+            if slot == MAIN then hands = verdict.score end
+        end
         table.insert(o.all, entry)
     end
-    for slot = 1, 18 do
-        local link = A.Plain(GetInventoryItemLink("player", slot))
-        if link then Add(link, slot, nil) end
-    end
     local seen = {}
+    for slot = 1, 18 do
+        local link = WornLink(pawn, scale, slot)
+        if link then
+            seen[link] = true -- a set piece kept in the bags is not counted twice
+            Add(link, slot, nil)
+        end
+    end
     local function AddCarried(link, where)
         if not link or seen[link] then return end
         seen[link] = true
@@ -242,7 +264,13 @@ local function ReadOwned(pawn, scale)
         local n = WEAR_TWO[place] and 2 or 1
         o.base = o.all[n] -- what a listing has to beat: nil when a slot is still free
         -- bags and bank only matter when they raise the bar above what is worn (a better item, or one for a free slot)
-        o.fromBags = o.base and o.base.score > ((o.worn[n] and o.worn[n].score) or 0) or false
+        local worn = (o.worn[n] and o.worn[n].score) or 0
+        if place == "MH" or place == "2H" then
+            -- the hands are filled by whichever weapon is worn there: with a two-hander on, a one-hander in the bags
+            -- (a skinning knife) must beat the two-hander before it counts, and the other way round
+            worn = math.max(worn, hands)
+        end
+        o.fromBags = o.base and o.base.score > worn or false
         -- the item that raised it, and where it is
         for i = 1, n do
             local e = o.all[i]

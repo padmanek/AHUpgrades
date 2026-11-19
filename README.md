@@ -20,10 +20,12 @@ It adds an **Upgrades** tab to the Auction House window, and `/ahu` opens the sa
   faction with the most prices (shown in the status line). Random-enchant items from that data are judged on their
   base item and marked "+ random".
 - **Judging.** Every listing goes through PawnForever exactly like its green bag arrows: your weights, your worn
-  gear, the weaker ring/trinket, weapons as a pair, and only what you can use now.
+  gear, the weaker ring/trinket, weapons as a pair, and only what you can use now. When a PawnForever scale is linked
+  to an Equipment Manager set, that spec's listings are judged against the set's pieces instead of what you wear.
 - **Your bags and bank count too.** A listing must also beat the gear you own, such as a second set for your other
   spec. Each slot is compared with the best item you have, worn, in the bags or in the bank; rings and trinkets with
-  the weaker of your best two. Those rows say "over bags" or "over bank", and the status line counts the listings
+  the weaker of your best two; a one-hander in the bags only counts when it beats the two-hander you wield, and the
+  other way round. Those rows say "over bags" or "over bank", and the status line counts the listings
   skipped as already owned. The bank can only be read while it is open, so each visit records its gear; until the
   first visit, Bagnon's cache of it is used if there is one.
 
