@@ -85,6 +85,25 @@ local function NoteRandom(link)
 end
 A.GroupKey, A.IsGear, A.NoteRandom = GroupKey, IsGear, NoteRandom -- also used by the gear scan (GearScan.lua)
 
+-- The AH gives each random enchant of an item a browse row of its own (its item key's itemSuffix), while auction
+-- links name it by bonus ID. Each item search teaches which suffix goes with which roll (A.db.rollSuffix), so one
+-- roll can be looked up, or opened, by itself.
+local function RollPart(key) return key and key:match("^%d+:(.+)$") end
+
+function A.LearnSuffix(itemKey, link)
+    local suffix = itemKey and A.Plain(itemKey.itemSuffix)
+    local part = suffix and suffix ~= 0 and A.db and RollPart(GroupKey(link))
+    if not part then return end
+    A.db.rollSuffix = type(A.db.rollSuffix) == "table" and A.db.rollSuffix or {}
+    A.db.rollSuffix[part] = suffix
+end
+
+-- The browse-row suffix of a row's random enchant ("9801:b12728"), when one has been seen
+function A.SuffixFor(rowKey)
+    local part = RollPart(rowKey)
+    return part and A.db and type(A.db.rollSuffix) == "table" and A.db.rollSuffix[part] or nil
+end
+
 ------------------------------------------------------------------------
 -- Reading the replicate list
 ------------------------------------------------------------------------

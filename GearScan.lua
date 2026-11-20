@@ -8,7 +8,7 @@
 --   2. Items that roll a random enchant ("of the Bear") are then searched one by one, all of them: that lists each
 --      auction with its real link, so the actual stats get judged, each enchant on its own row. The list is updated
 --      every few seconds. Which items roll one: the item key's suffix, the items seen with one in any scan before
---      (A.db.randomIDs; on WoW Forever the enchant is a bonus ID the browse row doesn't show), or the base tooltip.
+--      (A.db.randomIDs), or the base tooltip. On WoW Forever each roll has a browse row (suffix) of its own.
 -- The result replaces this realm's saved listings, like a full scan does. Stopped early, what was found is kept.
 --
 -- Live re-check. While the Upgrades tab is open at the AH and no scan runs, the rows on screen are looked up again
@@ -181,6 +181,7 @@ local function OnScanItem(key)
         if found[stand] and found[stand].standIn then found[stand] = nil end
         for _, a in ipairs(auctions) do
             A.NoteRandom(a.link)
+            A.LearnSuffix(key, a.link)
             Add(A.GroupKey(a.link), a.link, a.price, 1)
         end
     end
@@ -346,7 +347,7 @@ end
 -- .asked: our query has gone out; answers before that belong to someone else's search and are ignored
 local function LiveDone()
     live.row, live.phase, live.key, live.asked = nil, nil, nil, false
-    live.keys, live.ki, live.found, live.searchNext = nil, nil, nil, nil
+    live.keys, live.ki, live.found, live.searchNext, live.allKeys, live.narrow = nil, nil, nil, nil, nil, nil
 end
 
 local function ItemIDOf(r) return tonumber(r.link and r.link:match("item:(%d+)")) end
@@ -404,14 +405,22 @@ local function OnLiveBrowse()
         LiveApply(r, best, total)
         return
     end
-    -- a random enchant: only its auctions count, which the item search lists. The AH can split one item into
-    -- several browse rows (item keys), each with some of its rolls: every one is searched.
-    local desc = {}
-    for i, k in ipairs(keys) do
-        desc[i] = ("ilvl %s suffix %s"):format(tostring(Plain(k.itemLevel)), tostring(Plain(k.itemSuffix)))
+    -- a random enchant: only its auctions count, which the item search lists. The AH gives each roll of an item a
+    -- browse row of its own: when the row's suffix is known (A.SuffixFor) only that one is searched, else all.
+    local want, narrow = A.SuffixFor(r.key), nil
+    if want then
+        for _, k in ipairs(keys) do
+            if Plain(k.itemSuffix) == want then narrow = k break end
+        end
     end
-    LiveLog("%s: %d browse row(s) for item %d: %s", r.link, #keys, id, table.concat(desc, "; "))
-    live.keys, live.ki, live.found = keys, 0, {}
+    if narrow then
+        LiveLog("%s: searching its own browse row (suffix %d of %d rows)", r.link, want, #keys)
+    else
+        LiveLog("%s: %d browse row(s) for item %d%s, searching all", r.link, #keys, id,
+            want and (", none with suffix " .. want) or "")
+    end
+    live.allKeys, live.narrow = keys, narrow ~= nil
+    live.keys, live.ki, live.found = narrow and { narrow } or keys, 0, {}
     live.phase = "items"
     local function SearchNext()
         live.ki = live.ki + 1
@@ -439,13 +448,28 @@ local function OnLiveItem(key)
         if #got > 0 then WhenReady(function() pcall(AH.RequestMoreItemSearchResults, key) end) end
         return
     end
-    for _, a in ipairs(got) do live.found[#live.found + 1] = a end
+    for _, a in ipairs(got) do
+        live.found[#live.found + 1] = a
+        A.LearnSuffix(key, a.link)
+    end
     if live.ki < #live.keys then -- the item's next browse row
         live.searchNext()
         return
     end
     local auctions = live.found
     local r = live.row
+    if live.narrow then
+        local hit = false
+        for _, a in ipairs(auctions) do
+            if A.GroupKey(a.link) == r.key then hit = true break end
+        end
+        if not hit then -- the suffix learned for this roll was wrong for this item: search all its rows after all
+            LiveLog("%s: not in its own browse row, searching all %d", r.link, #live.allKeys)
+            live.narrow, live.keys, live.ki, live.found = false, live.allKeys, 0, {}
+            live.searchNext()
+            return
+        end
+    end
     local best, n, rolls, seen = nil, 0, 0, {}
     for _, a in ipairs(auctions) do
         local key = A.GroupKey(a.link)

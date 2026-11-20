@@ -76,15 +76,24 @@ openFrame:SetScript("OnEvent", function(_, event, arg1)
         return
     end
     if event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" and p.phase == "browse" then
+        -- each random enchant has a browse row of its own: open the row's roll when its suffix is known
+        local want = A.SuffixFor and A.SuffixFor(p.key)
+        local pick
         for _, b in ipairs(C_AuctionHouse.GetBrowseResults() or {}) do
             if b.itemKey and A.Plain(b.itemKey.itemID) == p.id then
-                p.phase, p.itemKey = "items", b.itemKey
-                if type(ah.SelectBrowseResult) == "function" then
-                    pcall(ah.SelectBrowseResult, ah, b)
-                else
-                    pendingOpen = nil
+                if not want or A.Plain(b.itemKey.itemSuffix) == want then
+                    pick = b
+                    break
                 end
-                return
+                pick = pick or b
+            end
+        end
+        if pick then
+            p.phase, p.itemKey = "items", pick.itemKey
+            if type(ah.SelectBrowseResult) == "function" then
+                pcall(ah.SelectBrowseResult, ah, pick)
+            else
+                pendingOpen = nil
             end
         end
     elseif event == "ITEM_SEARCH_RESULTS_UPDATED" and p.phase == "items" and type(arg1) == "table"
