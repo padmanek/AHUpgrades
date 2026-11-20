@@ -549,6 +549,133 @@ local function OnLiveItem(key)
         #seen > 0 and table.concat(seen, ", ") or "nothing"))
 end
 
+------------------------------------------------------------------------
+-- Live discovery: every DISCOVER_EVERY seconds, the slot picked above the list (or all gear) is searched like the
+-- gear scan's browse search, and listings not in the saved data are put in and judged on their own (A.JudgeNew).
+-- Plain items come with their price in the browse row; a random enchant's browse row (one per roll) is looked up
+-- only when its roll isn't saved yet, at most DISCOVER_ITEMS per round.
+------------------------------------------------------------------------
+
+local DISCOVER_EVERY = 60
+local DISCOVER_ITEMS = 12
+local disc = { last = 0 } -- .phase: "browse" or "items", .asked, .sent, .group, .queue, .qi, .key, .new, .items
+
+local function DiscoverDone(why)
+    local own = A.RealmData and A.RealmData()
+    local n = disc.new and #disc.new or 0
+    if own and own.items and n > 0 then
+        own.count = (own.count or 0) + n
+        local added = A.JudgeNew and A.JudgeNew(disc.new) or 0
+        LiveLog("new listings%s: %d found, %d of them upgrades", disc.group and (" (" .. (A.SlotLabel and
+            A.SlotLabel(disc.group) or disc.group) .. ")") or "", n, added)
+    elseif why then
+        LiveLog("new listings: %s", why)
+    end
+    disc.phase, disc.asked, disc.queue, disc.qi, disc.key, disc.new, disc.items = nil, false, nil, nil, nil, nil, nil
+    disc.last = GetTime()
+end
+
+-- A listing not saved yet: into the saved data, and onto the list of ones to judge
+local function DiscoverAdd(key, link, price, n)
+    if not key or disc.items[key] then return end
+    local e = { link = link, price = price, n = n or 1, key = key, t = time() }
+    disc.items[key] = e
+    disc.new[#disc.new + 1] = e
+end
+
+local function DiscoverNextItem()
+    disc.qi = disc.qi + 1
+    local k = disc.queue[disc.qi]
+    if not k then
+        DiscoverDone()
+        return
+    end
+    disc.key, disc.sent, disc.asked = k, GetTime(), false
+    WhenReady(function()
+        disc.sent = GetTime()
+        disc.asked = pcall(AH.SendSearchQuery, k, PRICE_SORT, true)
+        if not disc.asked then DiscoverNextItem() end
+    end, function() return disc.key == k end)
+end
+
+local function OnDiscoverBrowse()
+    if AH.HasFullBrowseResults and not AH.HasFullBrowseResults() then
+        disc.sent = GetTime()
+        WhenReady(function() pcall(AH.RequestMoreBrowseResults) end)
+        return
+    end
+    local own = A.RealmData and A.RealmData()
+    if not (own and own.items) then return DiscoverDone("no saved scan to add to") end
+    disc.items, disc.new, disc.queue, disc.qi = own.items, {}, {}, 0
+    -- roll part ("b12728") of each browse-row suffix, as item searches taught (Capture.lua A.LearnSuffix)
+    local partOf = {}
+    for part, suffix in pairs(type(A.db.rollSuffix) == "table" and A.db.rollSuffix or {}) do partOf[suffix] = part end
+    local randomIDs = A.db.randomIDs or {}
+    for _, b in ipairs(AH.GetBrowseResults() or {}) do
+        local key = b.itemKey
+        local id = key and Plain(key.itemID)
+        local price = Plain(b.minPrice)
+        if id and price and price > 0 and A.IsGear(id) and (not disc.group or InSlot(id, disc.group)) then
+            local suffix = Plain(key.itemSuffix) or 0
+            if suffix == 0 and not randomIDs[id] then
+                DiscoverAdd(tostring(id), "item:" .. id, price, Plain(b.totalQuantity) or 1)
+            elseif suffix ~= 0 then
+                local part = partOf[suffix]
+                if not (part and disc.items[id .. ":" .. part]) and #disc.queue < DISCOVER_ITEMS then
+                    disc.queue[#disc.queue + 1] = key -- a roll not saved (or not known yet): look it up
+                end
+            end
+        end
+    end
+    disc.phase = "items"
+    DiscoverNextItem()
+end
+
+local function OnDiscoverItem(key)
+    if not SameKey(key, disc.key) then return end
+    if AH.HasFullItemSearchResults and not AH.HasFullItemSearchResults(key) then
+        disc.sent = GetTime()
+        WhenReady(function() pcall(AH.RequestMoreItemSearchResults, key) end)
+        return
+    end
+    local cheapest = {}
+    for _, a in ipairs(ItemAuctions(key)) do
+        A.LearnSuffix(key, a.link)
+        A.NoteRandom(a.link)
+        local gk = A.GroupKey(a.link)
+        if gk and not disc.items[gk] then
+            local c = cheapest[gk]
+            if not c then
+                cheapest[gk] = { link = a.link, price = a.price, n = 1 }
+            else
+                c.n = c.n + 1
+                if a.price < c.price then c.price, c.link = a.price, a.link end
+            end
+        end
+    end
+    for gk, c in pairs(cheapest) do DiscoverAdd(gk, c.link, c.price, c.n) end
+    DiscoverNextItem()
+end
+
+local function StartDiscover(now)
+    disc.phase, disc.group, disc.sent, disc.asked = "browse", A.db.slotFilter, now, false
+    local query = {
+        searchString = "",
+        sorts = PRICE_SORT,
+        filters = Filters(true),
+        itemClassFilters = { { classID = Enum.ItemClass.Weapon }, { classID = Enum.ItemClass.Armor } },
+        minLevel = 0,
+        maxLevel = UnitLevel("player") or 0,
+    }
+    LiveLog("looking for new listings%s", disc.group and (" (" .. (A.SlotLabel and A.SlotLabel(disc.group) or
+        disc.group) .. ")") or "")
+    WhenReady(function()
+        disc.sent = GetTime()
+        disc.asked = pcall(AH.SendBrowseQuery, query)
+        if not disc.asked then DiscoverDone("the AH refused the search") end
+    end, function() return disc.phase == "browse" end)
+end
+
 -- One look-up: the next row on screen that wasn't looked at lately
 local function LiveStep()
     local wasOn = liveOn
@@ -556,6 +683,7 @@ local function LiveStep()
     if liveOn ~= wasOn then Fire() end
     if not liveOn then
         LiveDone()
+        if disc.phase then DiscoverDone("stopped") end
         return
     end
     local now = GetTime()
@@ -567,7 +695,22 @@ local function LiveStep()
         end
         return
     end
+    if disc.phase then
+        if now - disc.sent > LIVE_TIMEOUT then
+            if disc.phase == "items" then
+                DiscoverNextItem() -- no answer for this roll: on to the next
+            else
+                DiscoverDone("no answer from the AH")
+            end
+        end
+        return
+    end
     if now - live.last < LIVE_GAP then return end
+    if now - disc.last >= DISCOVER_EVERY and A.RankStatus() == "done" and A.RealmData and A.RealmData() then
+        live.last = now
+        StartDiscover(now)
+        return
+    end
     local targets = A.LiveTargets()
     for _ = 1, #targets do
         live.index = live.index % #targets + 1
@@ -617,16 +760,21 @@ ev:SetScript("OnEvent", function(_, event, arg1)
     if event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" or event == "AUCTION_HOUSE_BROWSE_RESULTS_ADDED" then
         if state == "browse" then
             OnScanBrowse()
+        elseif state == "idle" and disc.phase == "browse" and disc.asked then
+            OnDiscoverBrowse()
         elseif state == "idle" and live.phase == "browse" and live.asked then
             OnLiveBrowse()
         end
     elseif state == "details" then
         OnScanItem(arg1)
+    elseif state == "idle" and disc.phase == "items" and disc.asked then
+        OnDiscoverItem(arg1)
     elseif state == "idle" and live.asked then
         OnLiveItem(arg1)
     end
 end)
 A.On("AH_CLOSED", function()
     LiveDone()
+    if disc.phase then DiscoverDone("the AH closed") end
     if state ~= "idle" then StopEarly("the AH closed; gear scan stopped") end
 end)

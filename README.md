@@ -21,6 +21,8 @@ It adds an **Upgrades** tab to the Auction House window, and `/ahu` opens the sa
 - **Live prices.** While the Upgrades tab is open and no scan runs, the rows on screen are looked up again, one every
   couple of seconds ("Live" shows next to Scan gear): a new cheapest price is put in, and an item that is gone from the
   AH is taken off the list (only after two look-ups in a row miss it, so one odd answer can't empty the list).
+  Every minute it also searches the slot picked above the list (or all gear) for **new listings**: items and
+  random enchants not seen before are added, and new upgrades join the list marked "new".
 - **No scan yet?** It falls back to the prices ForeverCraftAssistant saved: this realm's, or else the realm of your
   faction with the most prices (shown in the status line). Random-enchant items from that data are judged on their
   base item and marked "+ random".

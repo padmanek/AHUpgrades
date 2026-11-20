@@ -301,6 +301,47 @@ local function AgainstBags(owned, verdict, link)
     return gain, carried.link, carried.where or "bags"
 end
 
+-- One listing judged: its row for the list, false when it is no upgrade (or already owned), or "retry" while the
+-- client is still loading the item. Counts A.inBags.
+local function Judge(pawn, scale, owned, e)
+    local ok, verdict = pcall(pawn.Upgrades.Check, pawn.Upgrades, e.link, scale)
+    if ok and verdict == nil then return "retry" end
+    local bagGain, bagLink, bagWhere
+    if ok and verdict and verdict.upgrade and verdict.usable then
+        bagGain, bagLink, bagWhere = AgainstBags(owned, verdict, e.link)
+        if bagGain == nil then A.inBags = (A.inBags or 0) + 1 end
+    end
+    if not (bagGain ~= nil and ok and verdict and verdict.upgrade and verdict.usable) then return false end
+    local name, itemLink, quality, _, _, _, _, _, _, icon = GetItemInfo(e.link)
+    local gain = verdict.gain or (verdict.empty and 100) or 50
+    local gold = math.max(e.price / 10000, 0.01)
+    -- no percentage to show when what is worn scores nothing (Pawn: "replaces an item worth nothing")
+    local worthless = not verdict.gain and not verdict.empty and not verdict.points
+    local gainText = worthless and "-" or pawn.Upgrades.GainText(verdict)
+    if bagGain then
+        -- measured against the better item in the bags or bank, not the worn one
+        gain = bagGain
+        gainText = ("+%d%% |cffaaaaaaover %s|r"):format(math.max(1, math.floor(bagGain + 0.5)), bagWhere)
+    end
+    -- From item IDs only (ForeverCraftAssistant data), a random-enchant item is judged without its
+    -- "of the ..." stats: the real one on the AH is likely better, but which one is unknown
+    local random = not e.link:find("|H") and IsRandomEnchant(e.link)
+    if random then gainText = gainText .. " |cffaaaaaa+ random|r" end
+    return {
+        key = e.key, entry = e, -- the saved listing it comes from
+        link = (e.link:find("|H") and e.link) or itemLink or e.link, name = name or e.link,
+        price = e.price, n = e.n, slot = A.SLOT_NAMES[verdict.slot] or "", gain = gain,
+        slotOrder = SLOT_ORDER[verdict.slot] or 99,
+        gainText = gainText, value = gain / gold, icon = icon, quality = quality, random = random,
+        vsBag = bagGain and bagLink or nil, vsWhere = bagGain and bagWhere or nil,
+        score = verdict.score,
+        scoreText = verdict.score and ((pawn.Format and pawn.Format(verdict.score)) or ("%.1f"):format(verdict.score)),
+    }
+end
+
+-- What the last judging used, for judging a few new listings on their own (A.JudgeNew)
+local lastContext
+
 -- Re-judges every listing. Runs a few milliseconds per frame; items the client hasn't loaded yet are retried in
 -- later passes.
 function A.Rank()
@@ -324,6 +365,7 @@ function A.Rank()
     local scale = A.ViewScale()
     A.rankedScale = scale
     local owned = ReadOwned(pawn, scale)
+    lastContext = { pawn = pawn, scale = scale, owned = owned }
     A.inBags = 0 -- upgrades over what is worn that the bags already match
     local passes, retry = 0, {}
     local i = 1
@@ -350,43 +392,12 @@ function A.Rank()
         while i <= #queue do
             local e = queue[i]
             i = i + 1
-            local ok, verdict = pcall(pawn.Upgrades.Check, pawn.Upgrades, e.link, scale)
-            if ok and verdict == nil then
+            local row = Judge(pawn, scale, owned, e)
+            if row == "retry" then
                 retry[#retry + 1] = e -- still loading
             else
                 progress = progress + 1
-                local bagGain, bagLink, bagWhere
-                if ok and verdict and verdict.upgrade and verdict.usable then
-                    bagGain, bagLink, bagWhere = AgainstBags(owned, verdict, e.link)
-                    if bagGain == nil then A.inBags = A.inBags + 1 end
-                end
-                if bagGain ~= nil and ok and verdict and verdict.upgrade and verdict.usable then
-                    local name, itemLink, quality, _, _, _, _, _, _, icon = GetItemInfo(e.link)
-                    local gain = verdict.gain or (verdict.empty and 100) or 50
-                    local gold = math.max(e.price / 10000, 0.01)
-                    -- no percentage to show when what is worn scores nothing (Pawn: "replaces an item worth nothing")
-                    local worthless = not verdict.gain and not verdict.empty and not verdict.points
-                    local gainText = worthless and "-" or pawn.Upgrades.GainText(verdict)
-                    if bagGain then
-                        -- measured against the better item in the bags or bank, not the worn one
-                        gain = bagGain
-                        gainText = ("+%d%% |cffaaaaaaover %s|r"):format(math.max(1, math.floor(bagGain + 0.5)), bagWhere)
-                    end
-                    -- From item IDs only (ForeverCraftAssistant data), a random-enchant item is judged without its
-                    -- "of the ..." stats: the real one on the AH is likely better, but which one is unknown
-                    local random = not e.link:find("|H") and IsRandomEnchant(e.link)
-                    if random then gainText = gainText .. " |cffaaaaaa+ random|r" end
-                    building[#building + 1] = {
-                        key = e.key, entry = e, -- the saved listing it comes from
-                        link = (e.link:find("|H") and e.link) or itemLink or e.link, name = name or e.link,
-                        price = e.price, n = e.n, slot = A.SLOT_NAMES[verdict.slot] or "", gain = gain,
-                        slotOrder = SLOT_ORDER[verdict.slot] or 99,
-                        gainText = gainText, value = gain / gold, icon = icon, quality = quality, random = random,
-                        vsBag = bagGain and bagLink or nil, vsWhere = bagGain and bagWhere or nil,
-                        score = verdict.score,
-                        scoreText = verdict.score and ((pawn.Format and pawn.Format(verdict.score)) or ("%.1f"):format(verdict.score)),
-                    }
-                end
+                if row then building[#building + 1] = row end
             end
             if Milliseconds() - started > budget then break end
         end
@@ -410,6 +421,35 @@ function A.Rank()
     end
     A.Fire("RESULTS")
     C_Timer.After(0, Step)
+end
+
+-- New listings (found by the live check, GearScan.lua) judged on their own and put in the list shown, without
+-- judging everything again. Ones the client hasn't loaded yet are tried again a moment later.
+function A.JudgeNew(entries, tries)
+    local ctx = lastContext
+    if not ctx or status ~= "done" or A.ViewScale() ~= ctx.scale then
+        A.dirty = true -- judged with everything at the next look
+        return 0
+    end
+    local added, retry = 0, {}
+    for _, e in ipairs(entries) do
+        local row = Judge(ctx.pawn, ctx.scale, ctx.owned, e)
+        if row == "retry" then
+            retry[#retry + 1] = e
+        elseif row then
+            row.isNew = true
+            results[#results + 1] = row
+            added = added + 1
+        end
+    end
+    if added > 0 then
+        A.SortResults()
+        A.Fire("RESULTS")
+    end
+    if #retry > 0 and (tries or 0) < 3 then
+        C_Timer.After(1, function() A.JudgeNew(retry, (tries or 0) + 1) end)
+    end
+    return added
 end
 
 ------------------------------------------------------------------------

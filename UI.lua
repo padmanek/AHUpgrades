@@ -281,7 +281,7 @@ local function RefreshView(v)
         row.data = r
         if r then
             row.icon:SetTexture(r.icon or 134400)
-            row.name:SetText(r.link)
+            row.name:SetText(r.isNew and ("|cff40ff40new|r " .. r.link) or r.link)
             row.slot:SetText(r.slot)
             row.score:SetText(r.scoreText or "")
             row.gain:SetText(r.gainText)
@@ -445,6 +445,8 @@ local function BuildList(host, top)
         GameTooltip:SetText("Live prices")
         GameTooltip:AddLine("The rows on screen are looked up on the AH again, one every couple of seconds: a new "
             .. "cheapest price is put in, and an item that is gone is taken off the list.", 1, 1, 1, true)
+        GameTooltip:AddLine("Every minute the slot picked above the list (or all gear) is searched for new listings: "
+            .. "new upgrades join the list, marked |cff40ff40new|r.", 0.7, 0.7, 0.7, true)
         GameTooltip:Show()
     end)
     liveFrame:SetScript("OnLeave", GameTooltip_Hide)
