@@ -81,6 +81,31 @@ local lastAnswer     -- GetTime() of the last answer from the AH
 local pages = 0
 local published, lastPublish = false, 0
 
+-- One slot only (the slot picked above the list): its listings are replaced, every other slot's are kept as saved.
+-- Slot groups as UI.lua's slot buttons number them.
+local SLOT_LOCS = {
+    [1] = { INVTYPE_HEAD = true }, [2] = { INVTYPE_NECK = true }, [3] = { INVTYPE_SHOULDER = true },
+    [4] = { INVTYPE_CLOAK = true }, [5] = { INVTYPE_CHEST = true, INVTYPE_ROBE = true }, [6] = { INVTYPE_WRIST = true },
+    [7] = { INVTYPE_HAND = true }, [8] = { INVTYPE_WAIST = true }, [9] = { INVTYPE_LEGS = true },
+    [10] = { INVTYPE_FEET = true }, [11] = { INVTYPE_FINGER = true }, [12] = { INVTYPE_TRINKET = true },
+    [13] = { INVTYPE_WEAPON = true, INVTYPE_2HWEAPON = true, INVTYPE_WEAPONMAINHAND = true },
+    [14] = { INVTYPE_WEAPON = true, INVTYPE_WEAPONOFFHAND = true, INVTYPE_SHIELD = true, INVTYPE_HOLDABLE = true },
+    [15] = { INVTYPE_RANGED = true, INVTYPE_RANGEDRIGHT = true, INVTYPE_THROWN = true, INVTYPE_RELIC = true },
+}
+local slotOnly       -- the slot group being scanned, or nil for every slot
+local kept           -- the saved listings of the other slots, during a one-slot scan
+local keptKind, keptT
+
+local GetInstant = C_Item and C_Item.GetItemInfoInstant or _G.GetItemInfoInstant
+local function InSlot(id, group)
+    local locs = SLOT_LOCS[group]
+    if not (locs and id and GetInstant) then return false end
+    local _, _, _, equipLoc = GetInstant(id)
+    return equipLoc and locs[equipLoc] or false
+end
+
+function A.GearScanSlot() return slotOnly end
+
 function A.GearScanState()
     if state == "browse" then return "browse", pages end
     if state == "details" then return "details", qi or 0, queue and #queue or 0 end
@@ -110,6 +135,16 @@ end
 -- Puts what was found so far in as this realm's listings; the list is judged again
 local function Publish()
     local n = 0
+    if slotOnly then
+        -- the other slots as saved, plus this slot as found
+        local items = {}
+        for k, e in pairs(kept) do items[k], n = e, n + 1 end
+        for k, e in pairs(found) do items[k], n = e, n + 1 end
+        A.db.realms[A.RealmKey()] = { t = keptT or time(), items = items, count = n, kind = keptKind or "gear" }
+        published, lastPublish = true, GetTime()
+        A.Fire("DATA")
+        return n
+    end
     for _ in pairs(found) do n = n + 1 end
     A.db.realms[A.RealmKey()] = { t = time(), items = found, count = n, kind = "gear" }
     published, lastPublish = true, GetTime()
@@ -121,6 +156,7 @@ local function Stop(message)
     token = token + 1
     state = "idle"
     found, rows, queue, qi = nil, nil, nil, nil
+    slotOnly, kept, keptKind, keptT = nil, nil, nil, nil
     if message then A.Print(message) end
     Fire()
 end
@@ -136,6 +172,13 @@ local function StopEarly(why)
 end
 
 local function Done()
+    if slotOnly then
+        local mine = 0
+        for _ in pairs(found) do mine = mine + 1 end
+        Publish()
+        Stop(("%s scan done: %d listings you can use."):format(A.SlotLabel and A.SlotLabel(slotOnly) or "slot", mine))
+        return
+    end
     local n = Publish()
     Stop(("gear scan done: %d gear items you can use. |cff40c0ff/ahu|r shows your upgrades."):format(n))
 end
@@ -251,7 +294,9 @@ local function OnScanBrowse()
         return
     end
     rows = {}
-    for _, r in ipairs(AH.GetBrowseResults() or {}) do rows[#rows + 1] = r end
+    for _, r in ipairs(AH.GetBrowseResults() or {}) do
+        if not slotOnly or InSlot(r.itemKey and Plain(r.itemKey.itemID), slotOnly) then rows[#rows + 1] = r end
+    end
     LoadThenSort()
 end
 
@@ -269,7 +314,8 @@ local function Filters(usableOnly)
 end
 A.BrowseFilters = Filters
 
-function A.GearScan()
+-- slot: a slot group (UI.lua's slot buttons) to scan only that slot, or nil for every slot
+function A.GearScan(slot)
     if state ~= "idle" then
         StopEarly("gear scan stopped")
         return
@@ -281,6 +327,17 @@ function A.GearScan()
     end
     token = token + 1
     state, found, pages, lastAnswer, published = "browse", {}, 0, GetTime(), false
+    slotOnly = SLOT_LOCS[slot] and slot or nil
+    if slotOnly then
+        kept = {}
+        local own = A.db.realms[A.RealmKey()]
+        if own and own.items then
+            for k, e in pairs(own.items) do
+                if not InSlot(tonumber(k:match("^(%d+)")), slotOnly) then kept[k] = e end
+            end
+            keptKind, keptT = own.kind, own.t
+        end
+    end
     Fire()
     local query = {
         searchString = "",

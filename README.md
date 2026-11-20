@@ -16,6 +16,8 @@ It adds an **Upgrades** tab to the Auction House window, and `/ahu` opens the sa
   there are hundreds). Which items roll one is learned from the scans: on WoW Forever the browse search doesn't say,
   so a full scan first helps it find them all. Its result replaces the realm's saved listings, as a full scan does;
   stopped early, what it found so far is kept.
+- **One slot.** With a slot picked above the list, the button reads "Scan head" (or that slot) and scans only that
+  slot: its saved listings are replaced, every other slot's stay as they were.
 - **Live prices.** While the Upgrades tab is open and no scan runs, the rows on screen are looked up again, one every
   couple of seconds ("Live" shows next to Scan gear): a new cheapest price is put in, and an item that is gone from the
   AH is taken off the list (only after two look-ups in a row miss it, so one odd answer can't empty the list).
