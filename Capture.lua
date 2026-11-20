@@ -47,18 +47,43 @@ local function IsGear(itemID)
     return (classID == WEAPON or classID == ARMOR) and not SKIP_LOC[equipLoc or ""]
 end
 
--- "item:ID:enchant:gem1:gem2:gem3:gem4:suffix:unique:..." -> "ID:suffix", the stats-relevant identity
+-- The stats-relevant identity of a link: "ID", plus its random enchant when it has one.
+-- "item:ID:enchant:gem1:gem2:gem3:gem4:suffix:unique:level:spec:mods:context:numBonus:bonus1:..."
+-- Classic links carry the random enchant in the suffix field ("ID:suffix"). WoW Forever puts it in the bonus IDs
+-- instead ("Helm of the Monkey" = item 10379 with bonus 12721), one per item, and only random-enchant items have
+-- any: "ID:b12721". Second result: true when the link has a random enchant.
 local function GroupKey(link)
     local itemString = link:match("|H(item:[^|]+)|h") or link
     local fields = {}
     for f in (itemString .. ":"):gmatch("([^:]*):") do fields[#fields + 1] = f end
     local id = fields[2]
     if not id or id == "" then return nil end
+    local key, random = id, false
     local suffix = fields[8]
-    if not suffix or suffix == "" or suffix == "0" then return id end
-    return id .. ":" .. suffix
+    if suffix and suffix ~= "" and suffix ~= "0" then key, random = key .. ":" .. suffix, true end
+    local bonuses = {}
+    for k = 1, tonumber(fields[14]) or 0 do
+        local b = fields[14 + k]
+        if b and b ~= "" then bonuses[#bonuses + 1] = b end
+    end
+    if #bonuses > 0 then
+        table.sort(bonuses)
+        key, random = key .. ":b" .. table.concat(bonuses, "."), true
+    end
+    return key, random
 end
-A.GroupKey, A.IsGear = GroupKey, IsGear -- also used by the gear scan (GearScan.lua)
+
+-- Items seen with a random enchant, remembered across scans: the gear scan's browse search lists them as the bare
+-- item, and this tells it which ones to look up one by one
+local function NoteRandom(link)
+    local key, random = GroupKey(link)
+    local id = random and tonumber(key:match("^(%d+)"))
+    if id and A.db then
+        A.db.randomIDs = A.db.randomIDs or {}
+        A.db.randomIDs[id] = true
+    end
+end
+A.GroupKey, A.IsGear, A.NoteRandom = GroupKey, IsGear, NoteRandom -- also used by the gear scan (GearScan.lua)
 
 ------------------------------------------------------------------------
 -- Reading the replicate list
@@ -86,6 +111,7 @@ local function AddRow(i, items)
     end
     local key = GroupKey(link)
     if not key then return true end
+    NoteRandom(link)
     local price = buyout / math.max(count or 1, 1)
     local e = items[key]
     if not e then
@@ -186,7 +212,14 @@ ev:SetScript("OnEvent", function(_, event, arg1)
         local db = AHUpgradesDB
         db.realms = type(db.realms) == "table" and db.realms or {}
         if db.sort == nil then db.sort = "value" end
+        db.randomIDs = type(db.randomIDs) == "table" and db.randomIDs or {}
         A.db = db
+        -- learn the random-enchant items from the saved listings too (scans made before randomIDs existed)
+        for _, realm in pairs(db.realms) do
+            for _, e in pairs(type(realm) == "table" and type(realm.items) == "table" and realm.items or {}) do
+                if type(e) == "table" and type(e.link) == "string" then NoteRandom(e.link) end
+            end
+        end
     elseif event == "PLAYER_LOGIN" then
         A.Fire("LOGIN")
     elseif event == "REPLICATE_ITEM_LIST_UPDATE" then

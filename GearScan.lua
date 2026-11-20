@@ -5,8 +5,10 @@
 -- armor that you can use, up to your level.
 --   1. A browse search: one row per item with its cheapest buyout, paged until the AH says it is complete. Those
 --      go in the list straight away; random-enchant items as their base item ("+ random") for now.
---   2. Items that roll a random enchant ("of the Bear") are then searched one by one: that lists each auction with
---      its real link, so the actual stats get judged. The list is updated every few of them.
+--   2. Items that roll a random enchant ("of the Bear") are then searched one by one, all of them: that lists each
+--      auction with its real link, so the actual stats get judged, each enchant on its own row. The list is updated
+--      every few seconds. Which items roll one: the item key's suffix, the items seen with one in any scan before
+--      (A.db.randomIDs; on WoW Forever the enchant is a bonus ID the browse row doesn't show), or the base tooltip.
 -- The result replaces this realm's saved listings, like a full scan does. Stopped early, what was found is kept.
 --
 -- Live re-check. While the Upgrades tab is open at the AH and no scan runs, the rows on screen are looked up again
@@ -18,7 +20,7 @@ local AH = C_AuctionHouse
 
 local TIMEOUT = 20        -- seconds without an answer from the AH before the gear scan gives up
 local LOAD_WAIT = 4       -- seconds to let the client load item data before telling random-enchant items apart
-local DETAIL_LIMIT = 150  -- random-enchant items searched one by one, at most
+local DETAIL_LIMIT = 3000 -- random-enchant items searched one by one, at most (in practice: all of them)
 local ITEM_TIMEOUT = 5    -- seconds to wait for one item's auctions
 local PUBLISH_EVERY = 4   -- seconds between list updates while random-enchant items are searched
 
@@ -175,7 +177,10 @@ local function OnScanItem(key)
         -- the real ones replace the base-item stand-in
         local stand = tostring(entry.key.itemID)
         if found[stand] and found[stand].standIn then found[stand] = nil end
-        for _, a in ipairs(auctions) do Add(A.GroupKey(a.link), a.link, a.price, 1) end
+        for _, a in ipairs(auctions) do
+            A.NoteRandom(a.link)
+            Add(A.GroupKey(a.link), a.link, a.price, 1)
+        end
     end
     Advance()
     return true
@@ -330,7 +335,7 @@ local function LiveDone() live.row, live.phase, live.key, live.asked = nil, nil,
 
 local function ItemIDOf(r) return tonumber(r.link and r.link:match("item:(%d+)")) end
 
--- The row's group: "id" (any copy counts) or "id:suffix" (that random enchant only)
+-- The row's group: "id" (any copy counts) or "id:suffix" / "id:b<bonus>" (that random enchant only)
 local function Matches(r, link)
     if not (r.key and r.key:find(":", 1, true)) then return true end
     return A.GroupKey(link) == r.key

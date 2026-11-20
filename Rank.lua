@@ -162,6 +162,9 @@ end
 
 -- An item that rolls a random enchant ("of the Bear"), seen by item ID only: its real stats are unknown
 local function IsRandomEnchant(link)
+    -- seen with a random enchant in a scan (Capture.lua). On WoW Forever the base item's tooltip may not say so.
+    local id = tonumber(link:match("item:(%d+)"))
+    if id and A.db and A.db.randomIDs and A.db.randomIDs[id] then return true end
     if not (C_TooltipInfo and C_TooltipInfo.GetHyperlink and ITEM_RANDOM_ENCHANT) then return false end
     local ok, data = pcall(C_TooltipInfo.GetHyperlink, link)
     for _, line in ipairs(ok and data and data.lines or {}) do

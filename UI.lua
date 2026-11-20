@@ -316,8 +316,8 @@ local function BuildList(host, top)
         GameTooltip:SetText("Scan gear")
         GameTooltip:AddLine("Searches the AH for weapons and armor you can use, up to your level: much quicker than a "
             .. "full scan, and it can run any time.", 1, 1, 1, true)
-        GameTooltip:AddLine("Items with a random enchant (\"of the Bear\") are looked up one by one, so their real "
-            .. "stats count.", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine("Items with a random enchant (\"of the Bear\") are then looked up one by one, every one of "
+            .. "them, so their real stats count. That part takes a few minutes; the list fills as it goes.", 0.7, 0.7, 0.7, true)
         local ok, why = A.CanGearScan()
         if A.GearScanState() ~= "idle" then
             GameTooltip:AddLine("Click to stop.", 1, 0.82, 0)

@@ -8,11 +8,14 @@ It adds an **Upgrades** tab to the Auction House window, and `/ahu` opens the sa
 ## How it works
 
 - **AH data.** When a full AH scan arrives (ForeverCraftAssistant's Scan button), AH Upgrades reads the same list
-  and keeps every gear listing: the cheapest buyout per item, **random enchants ("of the Bear") included**.
+  and keeps every gear listing: the cheapest buyout per item, and **per random enchant**: "of the Monkey" and "of the
+  Bear" of the same item are two rows, each judged on its own stats.
 - **Scan gear.** The list's own button searches the AH for just the weapons and armor you can use, up to your level:
   much quicker than a full scan, and it can run any time. The list fills as it goes: everything is in after the first
-  part, then items with a random enchant are looked up one by one so their real stats count. Its result replaces the
-  realm's saved listings, as a full scan does; stopped early, what it found so far is kept.
+  part, then every item with a random enchant is looked up one by one so their real stats count (a few minutes when
+  there are hundreds). Which items roll one is learned from the scans: on WoW Forever the browse search doesn't say,
+  so a full scan first helps it find them all. Its result replaces the realm's saved listings, as a full scan does;
+  stopped early, what it found so far is kept.
 - **Live prices.** While the Upgrades tab is open and no scan runs, the rows on screen are looked up again, one every
   couple of seconds ("Live" shows next to Scan gear): a new cheapest price is put in, and an item that is gone from the
   AH is taken off the list.
