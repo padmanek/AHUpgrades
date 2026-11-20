@@ -14,7 +14,8 @@
 -- Live re-check. While the Upgrades tab is open at the AH and no scan runs, the rows on screen are looked up again
 -- one at a time, every couple of seconds: a new cheapest price is put in, and a row whose item is gone from the AH
 -- is taken off the list, once two look-ups in a row miss it (one answer can belong to another search). A random
--- enchant whose auctions don't show their roll is left alone. The last look-ups are kept in A.db.liveTrace.
+-- enchant is looked for in every browse row the item has; one whose auctions don't show their roll is left alone.
+-- The last look-ups are kept in A.db.liveTrace.
 local _, A = ...
 
 local AH = C_AuctionHouse
@@ -328,19 +329,25 @@ function A.LiveActive() return liveOn end
 
 -- What each look-up does: the last LIVE_TRACE lines are kept in the saved variables (liveTrace) for checking
 -- afterwards, and /ahu live also says them in chat
-local LIVE_TRACE = 60
+local LIVE_TRACE = 400
 local function LiveLog(msg, ...)
     if select("#", ...) > 0 then msg = msg:format(...) end
     if not A.db then return end
     local t = type(A.db.liveTrace) == "table" and A.db.liveTrace or {}
     A.db.liveTrace = t
-    t[#t + 1] = date("%H:%M:%S ") .. msg:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    -- short: links as [Name], coins as plain copper
+    local short = msg:gsub("|c[^|]*|H[^|]*|h(%[.-%])|h|r", "%1"):gsub("|c[^|]*|H[^|]*|h(%[.-%])|h", "%1")
+        :gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|cn[^:]*:", ""):gsub("|r", ""):gsub("|T[^|]*|t", "")
+    t[#t + 1] = date("%H:%M:%S ") .. short
     while #t > LIVE_TRACE do table.remove(t, 1) end
     if A.db.liveLog then A.Print("%s", "|cff40ff40live|r: " .. msg) end
 end
 
 -- .asked: our query has gone out; answers before that belong to someone else's search and are ignored
-local function LiveDone() live.row, live.phase, live.key, live.asked = nil, nil, nil, false end
+local function LiveDone()
+    live.row, live.phase, live.key, live.asked = nil, nil, nil, false
+    live.keys, live.ki, live.found, live.searchNext = nil, nil, nil, nil
+end
 
 local function ItemIDOf(r) return tonumber(r.link and r.link:match("item:(%d+)")) end
 
@@ -352,7 +359,8 @@ local RECHECK_MISS = 6     -- seconds before a row that wasn't found is looked u
 local function LiveApply(r, price, n, why)
     if price then
         r.misses = nil
-        LiveLog("%s: %d listed, cheapest %s", r.link, n or 0, C_CurrencyInfo.GetCoinTextureString(math.floor(price + 0.5)))
+        LiveLog("%s (%s): %d listed, cheapest %s (%dc)", r.link, tostring(r.key), n or 0,
+            C_CurrencyInfo.GetCoinTextureString(math.floor(price + 0.5)), math.floor(price + 0.5))
         A.LiveUpdate(r, price, n)
     else
         -- one answer can be wrong (another search's results, an answer before the data is in): look again first
@@ -396,33 +404,53 @@ local function OnLiveBrowse()
         LiveApply(r, best, total)
         return
     end
-    -- a random enchant: only its auctions count, which the item search lists
-    live.phase, live.key, live.sent, live.asked = "items", keys[1], GetTime(), false
-    WhenReady(function()
-        live.sent = GetTime()
-        local ok, err = pcall(AH.SendSearchQuery, keys[1], PRICE_SORT, true)
-        live.asked = ok
-        if not ok then
-            LiveLog("|cffff6060the AH refused the item search:|r %s", tostring(err))
-            LiveDone()
-        end
-    end, function() return live.row == r end)
+    -- a random enchant: only its auctions count, which the item search lists. The AH can split one item into
+    -- several browse rows (item keys), each with some of its rolls: every one is searched.
+    local desc = {}
+    for i, k in ipairs(keys) do
+        desc[i] = ("ilvl %s suffix %s"):format(tostring(Plain(k.itemLevel)), tostring(Plain(k.itemSuffix)))
+    end
+    LiveLog("%s: %d browse row(s) for item %d: %s", r.link, #keys, id, table.concat(desc, "; "))
+    live.keys, live.ki, live.found = keys, 0, {}
+    live.phase = "items"
+    local function SearchNext()
+        live.ki = live.ki + 1
+        local k = live.keys[live.ki]
+        live.key, live.sent, live.asked = k, GetTime(), false
+        WhenReady(function()
+            live.sent = GetTime()
+            local ok, err = pcall(AH.SendSearchQuery, k, PRICE_SORT, true)
+            live.asked = ok
+            if not ok then
+                LiveLog("|cffff6060the AH refused the item search:|r %s", tostring(err))
+                LiveDone()
+            end
+        end, function() return live.row == r end)
+    end
+    live.searchNext = SearchNext
+    SearchNext()
 end
 
 local function OnLiveItem(key)
     if live.phase ~= "items" or not SameKey(key, live.key) then return end
-    local auctions = ItemAuctions(key)
+    local got = ItemAuctions(key)
     if AH.HasFullItemSearchResults and not AH.HasFullItemSearchResults(key) then
         live.sent = GetTime()
-        if #auctions > 0 then WhenReady(function() pcall(AH.RequestMoreItemSearchResults, key) end) end
+        if #got > 0 then WhenReady(function() pcall(AH.RequestMoreItemSearchResults, key) end) end
         return
     end
+    for _, a in ipairs(got) do live.found[#live.found + 1] = a end
+    if live.ki < #live.keys then -- the item's next browse row
+        live.searchNext()
+        return
+    end
+    local auctions = live.found
     local r = live.row
     local best, n, rolls, seen = nil, 0, 0, {}
     for _, a in ipairs(auctions) do
         local key = A.GroupKey(a.link)
         if IsRollKey(key) then rolls = rolls + 1 end
-        if #seen < 4 and key and not tContains(seen, key) then seen[#seen + 1] = key end
+        if #seen < 8 and key and not tContains(seen, key) then seen[#seen + 1] = key end
         if key == r.key then
             n = n + 1
             if not best or a.price < best then best = a.price end
@@ -472,7 +500,7 @@ local function LiveStep()
             local query = { searchString = name, sorts = PRICE_SORT, filters = Filters(false), itemClassFilters = {},
                 minLevel = 0, maxLevel = 0 }
             live.asked = false
-            LiveLog("checking %s", r.link)
+            LiveLog("checking %s (%s)", r.link, tostring(r.key))
             WhenReady(function()
                 live.sent = GetTime()
                 local ok, err = pcall(AH.SendBrowseQuery, query)

@@ -40,10 +40,70 @@ end
 
 local GetItemInfo = C_Item and C_Item.GetItemInfo or _G.GetItemInfo
 
-local function SearchAH(link)
+-- After a row's click search: open that item's auction list, and pick the cheapest auction of the row's random
+-- enchant in it. The AH's name search only knows base names ("Superior Belt", not "... of the Monkey"), so the
+-- search itself can't ask for one roll.
+local pendingOpen -- { id, key, phase = "browse" | "items", itemKey, untilT }
+
+local function SelectRoll(itemKey)
+    local ah = _G.AuctionHouseFrame
+    local list = ah and ah.ItemBuyFrame and ah.ItemBuyFrame.ItemList
+    if not (list and pendingOpen and pendingOpen.key and pendingOpen.key:find(":", 1, true)) then return end
+    for i = 1, C_AuctionHouse.GetNumItemSearchResults(itemKey) or 0 do
+        local info = C_AuctionHouse.GetItemSearchResultInfo(itemKey, i)
+        local link = info and A.Plain(info.itemLink)
+        if link and A.GroupKey(link) == pendingOpen.key then -- sorted by price: the first is the cheapest
+            if type(list.SetSelectedEntry) == "function" then pcall(list.SetSelectedEntry, list, info) end
+            if type(list.ScrollToEntryIndex) == "function" then pcall(list.ScrollToEntryIndex, list, i) end
+            return true
+        end
+    end
+end
+
+local openFrame = CreateFrame("Frame")
+openFrame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+pcall(openFrame.RegisterEvent, openFrame, "ITEM_SEARCH_RESULTS_UPDATED")
+openFrame:SetScript("OnEvent", function(_, event, arg1)
+    local p = pendingOpen
+    if not p then return end
+    if GetTime() > p.untilT then
+        pendingOpen = nil
+        return
+    end
+    local ah = _G.AuctionHouseFrame
+    if not (ah and ah:IsShown()) then
+        pendingOpen = nil
+        return
+    end
+    if event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" and p.phase == "browse" then
+        for _, b in ipairs(C_AuctionHouse.GetBrowseResults() or {}) do
+            if b.itemKey and A.Plain(b.itemKey.itemID) == p.id then
+                p.phase, p.itemKey = "items", b.itemKey
+                if type(ah.SelectBrowseResult) == "function" then
+                    pcall(ah.SelectBrowseResult, ah, b)
+                else
+                    pendingOpen = nil
+                end
+                return
+            end
+        end
+    elseif event == "ITEM_SEARCH_RESULTS_UPDATED" and p.phase == "items" and type(arg1) == "table"
+        and arg1.itemID == p.itemKey.itemID then
+        -- a moment later, so the list has drawn its rows first
+        C_Timer.After(0.1, function()
+            if pendingOpen == p then
+                SelectRoll(arg1)
+                pendingOpen = nil
+            end
+        end)
+    end
+end)
+
+local function SearchAH(link, key)
     local id = tonumber(link:match("item:(%d+)"))
     local name = id and GetItemInfo(id) -- base name, without "of the Bear": the AH search finds every version
     if not name then return end
+    pendingOpen = { id = id, key = key, phase = "browse", untilT = GetTime() + 8 }
     local ah = _G.AuctionHouseFrame
     if not (ah and ah:IsShown() and ah.SearchBar) then
         A.Print("open the Auction House to search for %s.", name)
@@ -527,7 +587,7 @@ local function BuildList(host, top)
             if IsShiftKeyDown() then
                 if ChatEdit_InsertLink then ChatEdit_InsertLink(self.data.link) end
             else
-                SearchAH(self.data.link)
+                SearchAH(self.data.link, self.data.key)
             end
         end)
         v.rows[i] = row

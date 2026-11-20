@@ -43,7 +43,8 @@ It adds an **Upgrades** tab to the Auction House window, and `/ahu` opens the sa
 - **Click a column header** to sort by it, click again to reverse. The Sort button cycles the common sorts.
 - **Max gold** hides anything more expensive.
 - **Click a row** to search the AH for it (the Buy tab's filters and category are cleared first, so every listing of
-  it shows), **Shift-click** to link it in chat.
+  it shows): its auction list opens with the cheapest one of that random enchant picked. The AH search itself only
+  knows base names, so it shows the item without "of the Monkey". **Shift-click** to link it in chat.
 
 ## Install
 
@@ -59,7 +60,7 @@ Needs **PawnForever**. ForeverCraftAssistant is optional but is what makes the f
 |---|---|
 | `/ahu` | Toggles the list (the Upgrades tab at the AH, a window elsewhere) |
 | `/ahu status` | How many gear listings this realm's last scan saved, and the bank gear on record |
-| `/ahu live` | Says in chat what each live price check does (again to stop); the last 60 are always kept in the saved variables |
+| `/ahu live` | Says in chat what each live price check does (again to stop); the last 400 are always kept in the saved variables |
 | `/ahu debug` | Tab state and the last error |
 
 ## License
