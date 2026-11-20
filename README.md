@@ -18,7 +18,7 @@ It adds an **Upgrades** tab to the Auction House window, and `/ahu` opens the sa
   stopped early, what it found so far is kept.
 - **Live prices.** While the Upgrades tab is open and no scan runs, the rows on screen are looked up again, one every
   couple of seconds ("Live" shows next to Scan gear): a new cheapest price is put in, and an item that is gone from the
-  AH is taken off the list.
+  AH is taken off the list (only after two look-ups in a row miss it, so one odd answer can't empty the list).
 - **No scan yet?** It falls back to the prices ForeverCraftAssistant saved: this realm's, or else the realm of your
   faction with the most prices (shown in the status line). Random-enchant items from that data are judged on their
   base item and marked "+ random".
@@ -59,7 +59,7 @@ Needs **PawnForever**. ForeverCraftAssistant is optional but is what makes the f
 |---|---|
 | `/ahu` | Toggles the list (the Upgrades tab at the AH, a window elsewhere) |
 | `/ahu status` | How many gear listings this realm's last scan saved, and the bank gear on record |
-| `/ahu live` | Says in chat what each live price check does (again to stop) |
+| `/ahu live` | Says in chat what each live price check does (again to stop); the last 60 are always kept in the saved variables |
 | `/ahu debug` | Tab state and the last error |
 
 ## License

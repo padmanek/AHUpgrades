@@ -13,7 +13,8 @@
 --
 -- Live re-check. While the Upgrades tab is open at the AH and no scan runs, the rows on screen are looked up again
 -- one at a time, every couple of seconds: a new cheapest price is put in, and a row whose item is gone from the AH
--- is taken off the list.
+-- is taken off the list, once two look-ups in a row miss it (one answer can belong to another search). A random
+-- enchant whose auctions don't show their roll is left alone. The last look-ups are kept in A.db.liveTrace.
 local _, A = ...
 
 local AH = C_AuctionHouse
@@ -325,9 +326,17 @@ end
 
 function A.LiveActive() return liveOn end
 
--- /ahu live: says in chat what each look-up does
+-- What each look-up does: the last LIVE_TRACE lines are kept in the saved variables (liveTrace) for checking
+-- afterwards, and /ahu live also says them in chat
+local LIVE_TRACE = 60
 local function LiveLog(msg, ...)
-    if A.db and A.db.liveLog then A.Print("|cff40ff40live|r: " .. msg, ...) end
+    if select("#", ...) > 0 then msg = msg:format(...) end
+    if not A.db then return end
+    local t = type(A.db.liveTrace) == "table" and A.db.liveTrace or {}
+    A.db.liveTrace = t
+    t[#t + 1] = date("%H:%M:%S ") .. msg:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    while #t > LIVE_TRACE do table.remove(t, 1) end
+    if A.db.liveLog then A.Print("%s", "|cff40ff40live|r: " .. msg) end
 end
 
 -- .asked: our query has gone out; answers before that belong to someone else's search and are ignored
@@ -335,19 +344,26 @@ local function LiveDone() live.row, live.phase, live.key, live.asked = nil, nil,
 
 local function ItemIDOf(r) return tonumber(r.link and r.link:match("item:(%d+)")) end
 
--- The row's group: "id" (any copy counts) or "id:suffix" / "id:b<bonus>" (that random enchant only)
-local function Matches(r, link)
-    if not (r.key and r.key:find(":", 1, true)) then return true end
-    return A.GroupKey(link) == r.key
-end
+local function IsRollKey(key) return key and key:find(":", 1, true) and true or false end
 
-local function LiveApply(r, price, n)
+local MISSES_TO_REMOVE = 2 -- a row is taken off only when this many look-ups in a row don't find it
+local RECHECK_MISS = 6     -- seconds before a row that wasn't found is looked up again
+
+local function LiveApply(r, price, n, why)
     if price then
+        r.misses = nil
         LiveLog("%s: %d listed, cheapest %s", r.link, n or 0, C_CurrencyInfo.GetCoinTextureString(math.floor(price + 0.5)))
         A.LiveUpdate(r, price, n)
     else
-        LiveLog("%s: gone from the AH, taken off the list", r.link)
-        A.LiveRemove(r)
+        -- one answer can be wrong (another search's results, an answer before the data is in): look again first
+        r.misses = (r.misses or 0) + 1
+        if r.misses >= MISSES_TO_REMOVE then
+            LiveLog("%s: not found (%s), %d times in a row: taken off the list", r.link, why or "?", r.misses)
+            A.LiveRemove(r)
+        else
+            LiveLog("%s: not found (%s), looking again before taking it off", r.link, why or "?")
+            r.checked = GetTime() - LIVE_AGAIN + RECHECK_MISS
+        end
     end
     LiveDone()
 end
@@ -367,16 +383,16 @@ local function OnLiveBrowse()
         end
     end
     if #keys == 0 then
-        -- other items by that name, and more pages to come: ours may be further on. An empty answer is final.
-        if #all > 0 and AH.HasFullBrowseResults and not AH.HasFullBrowseResults() then
+        -- more pages to come (or the first one not in yet): ours may be further on
+        if AH.HasFullBrowseResults and not AH.HasFullBrowseResults() then
             live.sent = GetTime()
-            WhenReady(function() pcall(AH.RequestMoreBrowseResults) end)
+            if #all > 0 then WhenReady(function() pcall(AH.RequestMoreBrowseResults) end) end
             return
         end
-        LiveApply(r, nil) -- not on the AH any more
+        LiveApply(r, nil, nil, ("name search: %d results, none item %d"):format(#all, id or 0))
         return
     end
-    if not (r.key and r.key:find(":", 1, true)) then
+    if not IsRollKey(r.key) then
         LiveApply(r, best, total)
         return
     end
@@ -396,20 +412,32 @@ end
 local function OnLiveItem(key)
     if live.phase ~= "items" or not SameKey(key, live.key) then return end
     local auctions = ItemAuctions(key)
-    if #auctions > 0 and AH.HasFullItemSearchResults and not AH.HasFullItemSearchResults(key) then
+    if AH.HasFullItemSearchResults and not AH.HasFullItemSearchResults(key) then
         live.sent = GetTime()
-        WhenReady(function() pcall(AH.RequestMoreItemSearchResults, key) end)
+        if #auctions > 0 then WhenReady(function() pcall(AH.RequestMoreItemSearchResults, key) end) end
         return
     end
     local r = live.row
-    local best, n = nil, 0
+    local best, n, rolls, seen = nil, 0, 0, {}
     for _, a in ipairs(auctions) do
-        if Matches(r, a.link) then
+        local key = A.GroupKey(a.link)
+        if IsRollKey(key) then rolls = rolls + 1 end
+        if #seen < 4 and key and not tContains(seen, key) then seen[#seen + 1] = key end
+        if key == r.key then
             n = n + 1
             if not best or a.price < best then best = a.price end
         end
     end
-    LiveApply(r, best, n)
+    if not best and #auctions > 0 and rolls == 0 then
+        -- the item is listed, but these links don't say which random enchant each one has: keep the row as it is
+        LiveLog("%s: %d listed, but their links show no random enchant (e.g. %s): left as it is", r.link,
+            #auctions, auctions[1].link)
+        r.misses = nil
+        LiveDone()
+        return
+    end
+    LiveApply(r, best, n, ("item search: %d listed, none %s; seen %s"):format(#auctions, tostring(r.key),
+        #seen > 0 and table.concat(seen, ", ") or "nothing"))
 end
 
 -- One look-up: the next row on screen that wasn't looked at lately
