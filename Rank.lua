@@ -91,7 +91,8 @@ function A.SortResults()
     end)
 end
 
-local BUDGET_MS = 10
+local BUDGET_MS = 10       -- milliseconds of judging per frame
+local BUDGET_SHOWN_MS = 25 -- the same while the list is on screen
 local function Milliseconds() return debugprofilestop and debugprofilestop() or GetTime() * 1000 end
 local GetItemInfo = C_Item and C_Item.GetItemInfo or _G.GetItemInfo
 
@@ -326,10 +327,26 @@ function A.Rank()
     A.inBags = 0 -- upgrades over what is worn that the bags already match
     local passes, retry = 0, {}
     local i = 1
+    -- Nothing on screen yet (first look after a reload or a new scan): show the upgrades as they are found. Otherwise
+    -- the list shown stays until the new one is ready.
+    local partial = #results == 0
+    local lastNote = 0
 
     local function Step()
         if token ~= runToken then return end
         local started = Milliseconds()
+        -- a bigger slice of each frame while the list is open and someone is waiting on it
+        local budget = (A.IsShown and A.IsShown()) and BUDGET_SHOWN_MS or BUDGET_MS
+        if started - lastNote > 250 then
+            lastNote = started
+            if partial and #building > 0 then
+                results = building
+                A.SortResults()
+                A.Fire("RESULTS")
+            else
+                A.Fire("PROGRESS") -- the counter on the status line
+            end
+        end
         while i <= #queue do
             local e = queue[i]
             i = i + 1
@@ -371,7 +388,7 @@ function A.Rank()
                     }
                 end
             end
-            if Milliseconds() - started > BUDGET_MS then break end
+            if Milliseconds() - started > budget then break end
         end
         if i <= #queue then
             C_Timer.After(0, Step)

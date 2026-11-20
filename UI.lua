@@ -235,6 +235,29 @@ local function StatusText()
     return ("%d upgrades%s among %d gear items (%s%s)%s"):format(#A.Results(), ForSpec(), src.count or 0, from, when, bags)
 end
 
+-- The status line, and the progress bar while the listings are judged with no upgrade to show yet
+local function UpdateProgress(v, empty)
+    v.status:SetText(StatusText())
+    local status, done, total = A.RankStatus()
+    if v.loading then
+        if empty == nil then empty = v.empty end
+        v.empty = empty
+        local busy = status == "working" and empty
+        v.loading:SetShown(busy)
+        if busy then
+            local fmt = BreakUpLargeNumbers or tostring
+            v.loading.text:SetText(("Checking gear: %s of %s"):format(fmt(done), fmt(total)))
+            v.loading.bar:SetValue(total > 0 and done / total or 0)
+        end
+    end
+end
+
+A.On("PROGRESS", function()
+    for _, v in ipairs(views) do
+        if v.frame:IsVisible() then UpdateProgress(v) end
+    end
+end)
+
 local function RefreshView(v)
     if not v.frame:IsVisible() then return end
     local list = Filtered(v.list, v.counts)
@@ -266,7 +289,7 @@ local function RefreshView(v)
             row:Hide()
         end
     end
-    v.status:SetText(StatusText())
+    UpdateProgress(v, #list == 0)
     v.sortButton:SetText("Sort: " .. (SORT_LABEL[A.db.sort] or SORT_LABEL.value) .. (A.db.sortReverse and " (rev)" or ""))
     -- Arrow next to the sorted column: down = highest/first at the top
     local s = A.SORTS[A.db.sort] or A.SORTS.value
@@ -601,6 +624,25 @@ local function BuildList(host, top)
         end)
         v.rows[i] = row
     end
+
+    -- While the listings are judged and no upgrade is in yet: a progress bar in the middle of the empty list
+    local loading = CreateFrame("Frame", nil, content)
+    loading:SetSize(340, 46)
+    loading:SetPoint("TOP", content, "TOP", 0, -62 - SLOT_H - 5 * ROW_H)
+    loading.text = Label(loading, "GameFontNormal", 340, "CENTER")
+    loading.text:SetPoint("TOP", 0, 0)
+    local bar = CreateFrame("StatusBar", nil, loading)
+    bar:SetSize(320, 12)
+    bar:SetPoint("TOP", loading.text, "BOTTOM", 0, -8)
+    bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    bar:SetStatusBarColor(0.25, 0.75, 0.25)
+    bar:SetMinMaxValues(0, 1)
+    local bg = bar:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0, 0, 0, 0.5)
+    loading.bar = bar
+    loading:Hide()
+    v.loading = loading
 
     v.footer = Label(content, "GameFontDisableSmall")
     v.footer:SetPoint("TOPLEFT", 12, -66 - SLOT_H - ROWS * ROW_H)
